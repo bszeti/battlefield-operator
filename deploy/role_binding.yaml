@@ -1,0 +1,11 @@
+kind: RoleBinding
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: battlefield-operator
+subjects:
+- kind: ServiceAccount
+  name: battlefield-operator
+roleRef:
+  kind: Role
+  name: battlefield-operator
+  apiGroup: rbac.authorization.k8s.io
