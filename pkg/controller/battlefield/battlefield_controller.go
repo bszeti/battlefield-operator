@@ -145,7 +145,7 @@ func newPodForCR(battlefield *rhtev1alpha1.Battlefield, player *rhtev1alpha1.Pla
 	var targets []string
 	for _, target := range battlefield.Spec.Players {
 		if player.Name != target.Name { 
-			targets = append(targets,player.Name)
+			targets = append(targets,battlefield.Name + "-player-" + target.Name)
 		}
 	}
 
@@ -176,7 +176,7 @@ func newPodForCR(battlefield *rhtev1alpha1.Battlefield, player *rhtev1alpha1.Pla
 						},
 						{
 							Name:  "BATTLEFIELD_HIT_PERIOD",
-							Value: strconv.Itoa(battlefield.Spec.HitFrequency),
+							Value: strconv.Itoa(battlefield.Spec.HitFrequency * 1000),
 						},
 					},
 				},
