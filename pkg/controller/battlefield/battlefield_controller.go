@@ -87,8 +87,8 @@ type ReconcileBattlefield struct {
 // The Controller will requeue the Request to be processed again if the returned error is non-nil or
 // Result.Requeue is true, otherwise upon completion it will remove the work from the queue.
 func (r *ReconcileBattlefield) Reconcile(request reconcile.Request) (reconcile.Result, error) {
-	reqLogger := log.WithValues("Request.Namespace", request.Namespace, "Request.Name", request.Name)
-	reqLogger.Info("Reconciling Battlefield")
+	reqLogger := log.WithValues("Battlefield", request.Name)
+	//reqLogger.Info("Reconciling Battlefield")
 
 	// Fetch the Battlefield instance
 	battlefield := &rhtev1alpha1.Battlefield{}
@@ -104,7 +104,7 @@ func (r *ReconcileBattlefield) Reconcile(request reconcile.Request) (reconcile.R
 		return reconcile.Result{}, err
 	}
 
-	reqLogger.Info("Battlefield", "Name", battlefield.ObjectMeta.Name,  "Duration", battlefield.Spec.Duration, "HitFrequency", battlefield.Spec.HitFrequency, "Num of players", len(battlefield.Spec.Players) )
+	//reqLogger.Info("Battlefield", "Name", battlefield.ObjectMeta.Name,  "Duration", battlefield.Spec.Duration, "HitFrequency", battlefield.Spec.HitFrequency, "Num of players", len(battlefield.Spec.Players) )
 
 	for _, player := range battlefield.Spec.Players {
 		service := newServiceForPlayer(battlefield, &player)
@@ -155,19 +155,23 @@ func (r *ReconcileBattlefield) Reconcile(request reconcile.Request) (reconcile.R
 		} else {
 
 			// Pod already exists 
-			reqLogger.Info("Pod status", "Pod.Namespace", pod.Namespace, "Pod.Name", pod.Name, "Status", found.Status)
+			//reqLogger.Info("Pod status", "Pod.Namespace", pod.Namespace, "Pod.Name", pod.Name, "Status", found.Status)
 
 			//check if container "player" is terminated
-			containerStatePlayer := getContainerState(found.Status.ContainerStatuses,"player")
-			if containerStatePlayer != nil && containerStatePlayer.Terminated != nil {
-				killedBy := containerStatePlayer.Terminated.Message;
-				reqLogger.Info("Player terminated:", "Pod.Name", found.Name, "Killed by:",killedBy)
-				increaseScore(battlefield, killedBy)
-				//Delete Pod
-				err = r.client.Delete(context.TODO(),found)
-				if err != nil {
-					reqLogger.Error( err, "Pod delete error")
-					return reconcile.Result{}, err
+			if found.Status.Phase == corev1.PodRunning || found.Status.Phase == corev1.PodSucceeded || found.Status.Phase == corev1.PodFailed {  
+				//Check Pods that are not in Pending or Unknown to avoid duble points
+				containerStatePlayer := getContainerState(found.Status.ContainerStatuses,"player")
+				if containerStatePlayer != nil && containerStatePlayer.Terminated != nil {
+					//TODO: Sometimed points are counted multiple times
+					killedBy := containerStatePlayer.Terminated.Message;
+					reqLogger.Info("Player terminated:", "Pod.Name", found.Name, "Killed by:",killedBy)
+					increaseScore(battlefield, killedBy)
+					//Delete Pod TODO: err.IfNotFound
+					err = r.client.Delete(context.TODO(),found)
+					if err != nil {
+						reqLogger.Error( err, "Pod delete error")
+						return reconcile.Result{}, err
+					}
 				}
 			}
 		}
@@ -215,6 +219,11 @@ func newPodForPlayer(battlefield *rhtev1alpha1.Battlefield, player *rhtev1alpha1
 		"player": player.Name,
 	}
 
+	annotations := map[string]string{
+		"sidecar.istio.io/inject": "true",
+	}
+
+	//List of targets for this pod - practically hservice names
 	var targets []string
 	for _, target := range battlefield.Spec.Players {
 		if player.Name != target.Name { 
@@ -227,6 +236,7 @@ func newPodForPlayer(battlefield *rhtev1alpha1.Battlefield, player *rhtev1alpha1
 			Name:      battlefield.Name + "-player-" + player.Name,
 			Namespace: battlefield.Namespace,
 			Labels:    labels,
+			Annotations: annotations,
 		},
 		Spec: corev1.PodSpec{
 			Containers: []corev1.Container{
