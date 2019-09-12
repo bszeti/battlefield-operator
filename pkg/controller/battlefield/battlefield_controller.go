@@ -4,6 +4,7 @@ import (
 	"context"
 	"strconv"
 	"strings"
+	
 
 	rhtev1alpha1 "github.com/bszeti/battlefield-operator/pkg/apis/rhte/v1alpha1"
 	corev1 "k8s.io/api/core/v1"
@@ -11,6 +12,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/apimachinery/pkg/util/intstr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
@@ -105,8 +107,32 @@ func (r *ReconcileBattlefield) Reconcile(request reconcile.Request) (reconcile.R
 	reqLogger.Info("Battlefield", "Name", battlefield.ObjectMeta.Name,  "Duration", battlefield.Spec.Duration, "HitFrequency", battlefield.Spec.HitFrequency, "Num of players", len(battlefield.Spec.Players) )
 
 	for _, player := range battlefield.Spec.Players {
+		service := newServiceForPlayer(battlefield, &player)
+
+		// Set Battlefield instance as the owner and controller
+		if err := controllerutil.SetControllerReference(battlefield, service, r.scheme); err != nil {
+			return reconcile.Result{}, err
+		}
+
+		// Check if this Service already exists
+		found := &corev1.Service{}
+		err = r.client.Get(context.TODO(), types.NamespacedName{Name: service.Name, Namespace: service.Namespace}, found)
+		if err != nil && errors.IsNotFound(err) {
+
+			reqLogger.Info("Creating a new Service", "Service.Namespace", service.Namespace, "Service.Name", service.Name)
+			err = r.client.Create(context.TODO(), service)
+			if err != nil {
+				return reconcile.Result{}, err
+			}
+
+		} else if err != nil {
+			return reconcile.Result{}, err
+		}
+	}
+
+	for _, player := range battlefield.Spec.Players {
 		// Define a new Pod object
-		pod := newPodForCR(battlefield, &player)
+		pod := newPodForPlayer(battlefield, &player)
 		
 		// Set Battlefield instance as the owner and controller
 		if err := controllerutil.SetControllerReference(battlefield, pod, r.scheme); err != nil {
@@ -116,30 +142,77 @@ func (r *ReconcileBattlefield) Reconcile(request reconcile.Request) (reconcile.R
 		// Check if this Pod already exists
 		found := &corev1.Pod{}
 		err = r.client.Get(context.TODO(), types.NamespacedName{Name: pod.Name, Namespace: pod.Namespace}, found)
-		if err != nil && errors.IsNotFound(err) {
-			reqLogger.Info("Creating a new Pod", "Pod.Namespace", pod.Namespace, "Pod.Name", pod.Name)
-			err = r.client.Create(context.TODO(), pod)
-			if err != nil {
+		if err != nil {
+			if errors.IsNotFound(err) {
+				reqLogger.Info("Creating a new Pod", "Pod.Namespace", pod.Namespace, "Pod.Name", pod.Name)
+				err = r.client.Create(context.TODO(), pod)
+				if err != nil {
+					return reconcile.Result{}, err
+				}
+			} else {
 				return reconcile.Result{}, err
 			}
+		} else {
 
-		} else if err != nil {
-			return reconcile.Result{}, err
+			// Pod already exists 
+			reqLogger.Info("Pod status", "Pod.Namespace", pod.Namespace, "Pod.Name", pod.Name, "Status", found.Status)
+
+			//check if container "player" is terminated
+			containerStatePlayer := getContainerState(found.Status.ContainerStatuses,"player")
+			if containerStatePlayer != nil && containerStatePlayer.Terminated != nil {
+				killedBy := containerStatePlayer.Terminated.Message;
+				reqLogger.Info("Player terminated:", "Pod.Name", found.Name, "Killed by:",killedBy)
+				increaseScore(battlefield, killedBy)
+				//Delete Pod
+				err = r.client.Delete(context.TODO(),found)
+				if err != nil {
+					reqLogger.Error( err, "Pod delete error")
+					return reconcile.Result{}, err
+				}
+			}
 		}
-
-		// Pod already exists - don't requeue
-		reqLogger.Info("Skip reconcile: Pod already exists", "Pod.Namespace", found.Namespace, "Pod.Name", found.Name)
+		//reqLogger.Info("Skip reconcile: Pod already exists", "Pod.Namespace", found.Namespace, "Pod.Name", found.Name)
 		
 	}
 
 	return reconcile.Result{}, nil
 }
 
-// newPodForCR returns a busybox pod with the same name/namespace as the cr
-func newPodForCR(battlefield *rhtev1alpha1.Battlefield, player *rhtev1alpha1.Player) *corev1.Pod {
+//Service definition for a player
+func newServiceForPlayer(battlefield *rhtev1alpha1.Battlefield, player *rhtev1alpha1.Player) *corev1.Service {
 	labels := map[string]string{
 		"app": battlefield.Name,
 		"battlefield": battlefield.Name,
+		"player": player.Name,
+	}
+
+	return &corev1.Service {
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      battlefield.Name + "-player-" + player.Name,
+			Namespace: battlefield.Namespace,
+			Labels:    labels,
+		},
+		Spec: corev1.ServiceSpec{
+			Ports: []corev1.ServicePort{
+				{
+					Name: "http",
+					Port: 80,
+					TargetPort: intstr.FromInt(8080),
+				},
+			},
+			Selector: map[string]string{
+				"player": player.Name,
+			},
+			Type: corev1.ServiceTypeClusterIP,
+		},
+	}
+}
+// Pod definition for a player
+func newPodForPlayer(battlefield *rhtev1alpha1.Battlefield, player *rhtev1alpha1.Player) *corev1.Pod {
+	labels := map[string]string{
+		"app": battlefield.Name,
+		"battlefield": battlefield.Name,
+		"player": player.Name,
 	}
 
 	var targets []string
@@ -184,4 +257,18 @@ func newPodForCR(battlefield *rhtev1alpha1.Battlefield, player *rhtev1alpha1.Pla
 			RestartPolicy: 		corev1.RestartPolicyNever,
 		},
 	}
+}
+
+func increaseScore(battlefield *rhtev1alpha1.Battlefield, playerName string) {
+
+}
+
+func getContainerState(containerStatuses []corev1.ContainerStatus, containerName string) *corev1.ContainerState {
+	//containerState := &corev1.ContainerState{}
+	for _,containerStatus := range containerStatuses {
+		if containerStatus.Name == containerName {
+			return &containerStatus.State
+		}
+	}
+	return nil
 }
