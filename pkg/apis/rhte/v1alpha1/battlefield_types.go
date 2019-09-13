@@ -55,8 +55,8 @@ type Player struct {
 // PlayerStatus records score of a player
 type PlayerStatus struct {
 	Name     		string `json:"name"`
-	Score    		int `json:"score"`
-	Dead    		int `json:"dead"`
+	Kill    		int `json:"kill"`
+	Death    		int `json:"death"`
 }
 
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object

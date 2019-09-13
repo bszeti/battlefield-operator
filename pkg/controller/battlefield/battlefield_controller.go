@@ -121,8 +121,8 @@ func (r *ReconcileBattlefield) Reconcile(request reconcile.Request) (reconcile.R
 			battlefield.Status.Scores = append(battlefield.Status.Scores,
 				rhtev1alpha1.PlayerStatus {
 					Name: player.Name,
-					Score: 0,
-					Dead: 0,
+					Kill: 0,
+					Death: 0,
 				})
 		}
 		
@@ -187,7 +187,7 @@ func (r *ReconcileBattlefield) Reconcile(request reconcile.Request) (reconcile.R
 		found := &corev1.Pod{}
 		err = r.client.Get(ctx, types.NamespacedName{Name: pod.Name, Namespace: pod.Namespace}, found)
 		if err != nil {
-			if errors.IsNotFound(err) && !timeExpired {
+			if errors.IsNotFound(err) {
 				reqLogger.Info("Creating a new Pod", "Pod.Namespace", pod.Namespace, "Pod.Name", pod.Name)
 				err = r.client.Create(ctx, pod)
 				if err != nil {
@@ -217,10 +217,10 @@ func (r *ReconcileBattlefield) Reconcile(request reconcile.Request) (reconcile.R
 
 					//Increase score counters
 					killedBy := containerStatePlayer.Terminated.Message;
-					reqLogger.Info("Player killed:", "Pod.Name", found.Name, "By:",killedBy)
-					increaseScore(battlefield, killedBy)
-					increaseDead(battlefield, player.Name)
-					reqLogger.Info("Increased score", "Status",  battlefield.Status)
+					reqLogger.Info("Player death:", "Player", found.Name, "Killed by:",killedBy)
+					increaseKill(battlefield, killedBy)
+					increaseDeath(battlefield, player.Name)
+					//reqLogger.Info("Increased score", "Status",  battlefield.Status)
 					err := r.client.Status().Update(ctx, battlefield)
 					if err != nil {
 						reqLogger.Error( err, "Error updating Battlefield")
@@ -345,20 +345,20 @@ func newPodForPlayer(battlefield *rhtev1alpha1.Battlefield, player *rhtev1alpha1
 	}
 }
 
-func increaseScore(battlefield *rhtev1alpha1.Battlefield, playerName string) {
+func increaseKill(battlefield *rhtev1alpha1.Battlefield, playerName string) {
 	for index,playerStatus := range battlefield.Status.Scores{
 		if playerName == playerStatus.Name {
-			battlefield.Status.Scores[index].Score++
+			battlefield.Status.Scores[index].Kill++
 			return
 		}
 	}
 }
 
-func increaseDead(battlefield *rhtev1alpha1.Battlefield, playerName string) {
+func increaseDeath(battlefield *rhtev1alpha1.Battlefield, playerName string) {
 	for index,playerStatus := range battlefield.Status.Scores{
 		if playerName == playerStatus.Name {
 			
-			battlefield.Status.Scores[index].Dead++
+			battlefield.Status.Scores[index].Death++
 			return
 		}
 	}
