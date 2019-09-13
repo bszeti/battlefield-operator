@@ -4,6 +4,7 @@ import (
 	"context"
 	"strconv"
 	"strings"
+	"time"
 	
 
 	rhtev1alpha1 "github.com/bszeti/battlefield-operator/pkg/apis/rhte/v1alpha1"
@@ -107,11 +108,12 @@ func (r *ReconcileBattlefield) Reconcile(request reconcile.Request) (reconcile.R
 		return reconcile.Result{}, err
 	}
 
+	timeExpired := false
 	//***********************
 	// Init Battlefield 
 	//***********************
 	if battlefield.Status.Phase == "" {
-		reqLogger.Info("Init battlefield", "Name", battlefield.ObjectMeta.Name,  "Duration", battlefield.Spec.Duration, "HitFrequency", battlefield.Spec.HitFrequency, "Num of players", len(battlefield.Spec.Players) )
+		reqLogger.Info("Init game", "Name", battlefield.ObjectMeta.Name,  "Duration", battlefield.Spec.Duration, "HitFrequency", battlefield.Spec.HitFrequency, "Num of players", len(battlefield.Spec.Players) )
 
 		battlefield.Status.Phase = "init"
 
@@ -135,7 +137,12 @@ func (r *ReconcileBattlefield) Reconcile(request reconcile.Request) (reconcile.R
 		//TODO: If the status update triggers an event, then we can just return. Otherwise do 
 		// reconcile.Result{Requeue: true}, nil
 		// return reconcile.Result{}, null
+	} else {
+		//check if time is expired
+		timeExpired = time.Since(battlefield.Status.StartTime.Time) > time.Duration(battlefield.Spec.Duration) * time.Second 
 	}
+	
+	
 	//reqLogger.Info("Players", "Num of players", len(battlefield.Spec.Players), "Names", battlefield.Spec.Players )
 
 	//***********************
@@ -148,26 +155,40 @@ func (r *ReconcileBattlefield) Reconcile(request reconcile.Request) (reconcile.R
 
 		// Set Battlefield instance as the owner and controller
 		if err := controllerutil.SetControllerReference(battlefield, service, r.scheme); err != nil {
-			reqLogger.Error( err, "Error setting owner for Service")
+			reqLogger.Error( err, "Error setting owner for Service",  "Service.Name", service.Name)
 			//TODO: break instead
 			return reconcile.Result{}, err
 		}
 
 		// Check if this Service already exists
 		found := &corev1.Service{}
-		err = r.client.Get(ctx, types.NamespacedName{Name: service.Name, Namespace: service.Namespace}, found)
-		if err != nil && errors.IsNotFound(err) {
-
-			reqLogger.Info("Creating a new Service", "Service.Namespace", service.Namespace, "Service.Name", service.Name)
-			err = r.client.Create(ctx, service)
-			if err != nil {
-				reqLogger.Error( err, "Error creating Service")
+		err := r.client.Get(ctx, types.NamespacedName{Name: service.Name, Namespace: service.Namespace}, found)
+		if err != nil {
+			if errors.IsNotFound(err) {
+				if !timeExpired { //Create missing service if time is not expired
+					reqLogger.Info("Creating a new Service", "Service.Name", service.Name)
+					err := r.client.Create(ctx, service)
+					if err != nil {
+						reqLogger.Error( err, "Error creating Service", "Service.Name", service.Name)
+						return reconcile.Result{}, err
+					}
+				}
+			} else {
+				reqLogger.Error( err, "Error reading Service", "Service.Name", service.Name)
 				return reconcile.Result{}, err
 			}
+		} else {
+			//Service is found
 
-		} else if err != nil {
-			reqLogger.Error( err, "Error reading Service")
-			return reconcile.Result{}, err
+			//If time is up, delete service
+			if timeExpired && found.DeletionTimestamp == nil {
+				reqLogger.Info("Time is up - deleting service", "Service.Name", found.Name)
+				err := r.client.Delete(ctx,found)
+				if err != nil {
+					reqLogger.Error( err, "Error deleting Service", "Service.Name", found.Name)
+					return reconcile.Result{}, err
+				}
+			}
 		}
 	}
 
@@ -178,46 +199,51 @@ func (r *ReconcileBattlefield) Reconcile(request reconcile.Request) (reconcile.R
 		// Define a new Pod object
 		pod := newPodForPlayer(battlefield, &player)
 		if err := controllerutil.SetControllerReference(battlefield, pod, r.scheme); err != nil {
-			reqLogger.Error( err, "Error setting owner for Pod")
-			//TODO: break instead
+			reqLogger.Error( err, "Error setting owner for Pod", "Pod.Name", pod.Name)
+			//TODO: break instead?
 			return reconcile.Result{}, err			
 		}
 
-		// Check if this Pod already exists
+		// Check if pod already exists
 		found := &corev1.Pod{}
-		err = r.client.Get(ctx, types.NamespacedName{Name: pod.Name, Namespace: pod.Namespace}, found)
+		err := r.client.Get(ctx, types.NamespacedName{Name: pod.Name, Namespace: pod.Namespace}, found)
 		if err != nil {
 			if errors.IsNotFound(err) {
-				reqLogger.Info("Creating a new Pod", "Pod.Namespace", pod.Namespace, "Pod.Name", pod.Name)
-				err = r.client.Create(ctx, pod)
-				if err != nil {
-					reqLogger.Error( err, "Error creating Pod")
-					return reconcile.Result{}, err
+				if !timeExpired { 
+					// Create missing pod - (re)spawn player
+					reqLogger.Info("Creating Pod", "Pod.Name", pod.Name)
+					err := r.client.Create(ctx, pod)
+					if err != nil {
+						reqLogger.Error( err, "Error creating Pod", "Pod.Name", pod.Name)
+						return reconcile.Result{}, err
+					}
 				}
 			} else {
-				reqLogger.Error( err, "Error reading Pod")
+				reqLogger.Error( err, "Error reading Pod", "Pod.Name", pod.Name)
 				return reconcile.Result{}, err
 			}
 		} else {
-			// Pod already exists 
-			//reqLogger.Info("Pod status", "Pod.Namespace", pod.Namespace, "Pod.Name", pod.Name, "Status", found.Status)
+			// Pod is found 
+			//reqLogger.Info("Pod status", "Pod.Namespace", found.Namespace, "Pod.Name", found.Name, "Status", found.Status)
 
-			//check if container "player" is terminated
+			//Only manage pod if it's not marked for deletetion yet
 			if found.DeletionTimestamp == nil {
-				//Check only if Pod was not deleted yet
+				
+				//check if container "player" is terminated - update scores and delete the pod to stop any sidecars
 				containerStatePlayer := getContainerState(found.Status.ContainerStatuses,"player")
 				if containerStatePlayer != nil && containerStatePlayer.Terminated != nil {
 					//TODO: Sometimes points are counted multiple times because of racing conditions. client.Delete doesn't return if Pod was deleted before.
 					
+					reqLogger.Info("Killed - deleting Pod", "Pod.Name", found.Name)
 					err = r.client.Delete(ctx,found)
 					if err != nil {
-						reqLogger.Error( err, "Error deleting Pod")
+						reqLogger.Error( err, "Error deleting Pod", "Pod.Name", found.Name)
 						return reconcile.Result{}, err
 					}
 
 					//Increase score counters
 					killedBy := containerStatePlayer.Terminated.Message;
-					reqLogger.Info("Player death:", "Player", found.Name, "Killed by:",killedBy)
+					reqLogger.Info("Player is killed", "Death", player.Name, "Kill",killedBy)
 					increaseKill(battlefield, killedBy)
 					increaseDeath(battlefield, player.Name)
 					//reqLogger.Info("Increased score", "Status",  battlefield.Status)
@@ -226,10 +252,20 @@ func (r *ReconcileBattlefield) Reconcile(request reconcile.Request) (reconcile.R
 						reqLogger.Error( err, "Error updating Battlefield")
 						return reconcile.Result{}, err
 					}
+				} else {
+
+					//If time is up, delete pod
+					if timeExpired {
+						reqLogger.Info("Time is up - deleting pod", "Pod.Name", found.Name)
+						err := r.client.Delete(ctx,found)
+						if err != nil {
+							reqLogger.Error( err, "Error deleting pod", "Pod.Name", found.Name)
+							return reconcile.Result{}, err
+						}
+					}
+
 				}
-			}
-							
-						
+			}		
 					
 		}
 		//reqLogger.Info("Skip reconcile: Pod already exists", "Pod.Namespace", found.Namespace, "Pod.Name", found.Name)
@@ -241,7 +277,7 @@ func (r *ReconcileBattlefield) Reconcile(request reconcile.Request) (reconcile.R
 	// Post init - start game
 	//***************************
 	if battlefield.Status.Phase == "init" {
-		reqLogger.Info("Start battlefield", "Name", battlefield.ObjectMeta.Name,  "Duration", battlefield.Spec.Duration, "HitFrequency", battlefield.Spec.HitFrequency, "Num of players", len(battlefield.Spec.Players) )
+		reqLogger.Info("Starting game", "Duration", battlefield.Spec.Duration, "HitFrequency", battlefield.Spec.HitFrequency, "Number of players", len(battlefield.Spec.Players) )
 
 		battlefield.Status.Phase = "started"
 		t := metav1.Now()
@@ -253,6 +289,24 @@ func (r *ReconcileBattlefield) Reconcile(request reconcile.Request) (reconcile.R
 			return reconcile.Result{}, err
 		}
 		
+	}
+
+	//***************************
+	// Time Expired - update status
+	//***************************
+	if timeExpired && battlefield.Status.Phase != "done"{
+		
+		battlefield.Status.Phase = "done"
+		t := metav1.Now()
+		battlefield.Status.StopTime = &t
+		
+		reqLogger.Info("Game Over", "Duration", battlefield.Spec.Duration, "StartTime", battlefield.Status.StartTime, "StopTime", battlefield.Status.StopTime )
+
+		err := r.client.Status().Update(ctx, battlefield)
+		if err != nil {
+			reqLogger.Error( err, "Error updating Battlefield")
+			return reconcile.Result{}, err
+		}
 	}
 
 	return reconcile.Result{}, nil
