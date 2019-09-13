@@ -65,10 +65,37 @@ func schema_pkg_apis_rhte_v1alpha1_BattlefieldSpec(ref common.ReferenceCallback)
 		Schema: spec.Schema{
 			SchemaProps: spec.SchemaProps{
 				Description: "BattlefieldSpec defines the desired state of Battlefield",
-				Properties:  map[string]spec.Schema{},
+				Properties: map[string]spec.Schema{
+					"duration": {
+						SchemaProps: spec.SchemaProps{
+							Type:   []string{"integer"},
+							Format: "int32",
+						},
+					},
+					"players": {
+						SchemaProps: spec.SchemaProps{
+							Type: []string{"array"},
+							Items: &spec.SchemaOrArray{
+								Schema: &spec.Schema{
+									SchemaProps: spec.SchemaProps{
+										Ref: ref("./pkg/apis/rhte/v1alpha1.Player"),
+									},
+								},
+							},
+						},
+					},
+					"hitFrequency": {
+						SchemaProps: spec.SchemaProps{
+							Type:   []string{"integer"},
+							Format: "int32",
+						},
+					},
+				},
+				Required: []string{"duration", "players", "hitFrequency"},
 			},
 		},
-		Dependencies: []string{},
+		Dependencies: []string{
+			"./pkg/apis/rhte/v1alpha1.Player"},
 	}
 }
 
@@ -77,9 +104,40 @@ func schema_pkg_apis_rhte_v1alpha1_BattlefieldStatus(ref common.ReferenceCallbac
 		Schema: spec.Schema{
 			SchemaProps: spec.SchemaProps{
 				Description: "BattlefieldStatus defines the observed state of Battlefield",
-				Properties:  map[string]spec.Schema{},
+				Properties: map[string]spec.Schema{
+					"phase": {
+						SchemaProps: spec.SchemaProps{
+							Type:   []string{"string"},
+							Format: "",
+						},
+					},
+					"startTime": {
+						SchemaProps: spec.SchemaProps{
+							Ref: ref("k8s.io/apimachinery/pkg/apis/meta/v1.Time"),
+						},
+					},
+					"stopTime": {
+						SchemaProps: spec.SchemaProps{
+							Ref: ref("k8s.io/apimachinery/pkg/apis/meta/v1.Time"),
+						},
+					},
+					"scores": {
+						SchemaProps: spec.SchemaProps{
+							Type: []string{"array"},
+							Items: &spec.SchemaOrArray{
+								Schema: &spec.Schema{
+									SchemaProps: spec.SchemaProps{
+										Ref: ref("./pkg/apis/rhte/v1alpha1.PlayerStatus"),
+									},
+								},
+							},
+						},
+					},
+				},
+				Required: []string{"phase", "scores"},
 			},
 		},
-		Dependencies: []string{},
+		Dependencies: []string{
+			"./pkg/apis/rhte/v1alpha1.PlayerStatus", "k8s.io/apimachinery/pkg/apis/meta/v1.Time"},
 	}
 }

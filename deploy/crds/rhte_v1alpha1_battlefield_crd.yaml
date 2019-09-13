@@ -9,6 +9,8 @@ spec:
     listKind: BattlefieldList
     plural: battlefields
     singular: battlefield
+    shortNames:
+    - bf
   scope: Namespaced
   subresources:
     status: {}
@@ -28,8 +30,63 @@ spec:
         metadata:
           type: object
         spec:
+          properties:
+            duration:
+              format: int64
+              type: integer
+            hitFrequency:
+              format: int64
+              type: integer
+            players:
+              items:
+                properties:
+                  image:
+                    type: string
+                  maxhealth:
+                    format: int64
+                    type: integer
+                  name:
+                    type: string
+                required:
+                - name
+                - maxhealth
+                type: object
+              type: array
+          required:
+          - duration
+          - players
+          - hitFrequency
           type: object
         status:
+          properties:
+            phase:
+              type: string
+            scores:
+              items:
+                properties:
+                  death:
+                    format: int64
+                    type: integer
+                  kill:
+                    format: int64
+                    type: integer
+                  name:
+                    type: string
+                required:
+                - name
+                - kill
+                - death
+                type: object
+              type: array
+            startTime:
+              format: date-time
+              type: string
+            stopTime:
+              format: date-time
+              type: string
+          required:
+          - phase
+          - scores
           type: object
   version: v1alpha1
   versions:

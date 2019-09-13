@@ -10,9 +10,9 @@ import (
 // BattlefieldSpec defines the desired state of Battlefield
 // +k8s:openapi-gen=true
 type BattlefieldSpec struct {
-	Duration	int    `json:"duration"`
-	Players		[]Player `json:"players"`
-	HitFrequency int   `json:"hitfrequency"`
+	Duration     int      `json:"duration"`
+	Players      []Player `json:"players"`
+	HitFrequency int      `json:"hitFrequency"`
 
 	// INSERT ADDITIONAL SPEC FIELDS - desired state of cluster
 	// Important: Run "operator-sdk generate k8s" to regenerate code after modifying this file
@@ -22,11 +22,10 @@ type BattlefieldSpec struct {
 // BattlefieldStatus defines the observed state of Battlefield
 // +k8s:openapi-gen=true
 type BattlefieldStatus struct {
-
-	Phase		string			`json:"phase"`
-	StartTime 	*metav1.Time 	`json:"startTime,omitempty" protobuf:"bytes,7,opt,name=startTime"`
-	StopTime  	*metav1.Time 	`json:"StopTime,omitempty" protobuf:"bytes,7,opt,name=stopTime"`
-	Scores 		[]PlayerStatus 	`json:"scores"`
+	Phase     string         `json:"phase"`
+	StartTime *metav1.Time   `json:"startTime,omitempty"`
+	StopTime  *metav1.Time   `json:"stopTime,omitempty"`
+	Scores    []PlayerStatus `json:"scores"`
 	// INSERT ADDITIONAL STATUS FIELD - define observed state of cluster
 	// Important: Run "operator-sdk generate k8s" to regenerate code after modifying this file
 	// Add custom validation using kubebuilder tags: https://book-v1.book.kubebuilder.io/beyond_basics/generating_crd.html
@@ -47,16 +46,16 @@ type Battlefield struct {
 
 // Player defines one container player
 type Player struct {
-	Name     string `json:"name"`
-    Image    string `json:"image,omitempty"`
-	MaxHealth int `json:"maxhealth"`
+	Name      string `json:"name"`
+	Image     string `json:"image,omitempty"`
+	MaxHealth int    `json:"maxhealth"`
 }
 
 // PlayerStatus records score of a player
 type PlayerStatus struct {
-	Name     		string `json:"name"`
-	Kill    		int `json:"kill"`
-	Death    		int `json:"death"`
+	Name  string `json:"name"`
+	Kill  int    `json:"kill"`
+	Death int    `json:"death"`
 }
 
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
