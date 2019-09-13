@@ -9,7 +9,7 @@ spec:
   - name: player0
     # image: default-route-openshift-image-registry.apps-crc.testing/myproject/fuse-player-app
     image: quay.io/bszeti/fuse-player:latest
-    maxhealth: 3
+    maxhealth: 10
   - name: player1
     image: quay.io/bszeti/fuse-player:latest
     maxhealth: 3
