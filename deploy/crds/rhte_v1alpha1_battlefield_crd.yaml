@@ -11,6 +11,11 @@ spec:
     singular: battlefield
     shortNames:
     - bf
+  additionalPrinterColumns:
+  - name: Phase
+    type: string
+    description: Game status
+    JSONPath: .status.phase
   scope: Namespaced
   subresources:
     status: {}
