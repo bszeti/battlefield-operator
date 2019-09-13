@@ -107,13 +107,16 @@ func (r *ReconcileBattlefield) Reconcile(request reconcile.Request) (reconcile.R
 		return reconcile.Result{}, err
 	}
 
-	//Setup Battlefield status
+	//***********************
+	// Init Battlefield 
+	//***********************
 	if battlefield.Status.Phase == "" {
 		reqLogger.Info("Init battlefield", "Name", battlefield.ObjectMeta.Name,  "Duration", battlefield.Spec.Duration, "HitFrequency", battlefield.Spec.HitFrequency, "Num of players", len(battlefield.Spec.Players) )
 
 		battlefield.Status.Phase = "init"
 
 		//Init player scores
+		battlefield.Status.Scores = nil
 		for _, player := range battlefield.Spec.Players {
 			battlefield.Status.Scores = append(battlefield.Status.Scores,
 				rhtev1alpha1.PlayerStatus {
@@ -128,10 +131,16 @@ func (r *ReconcileBattlefield) Reconcile(request reconcile.Request) (reconcile.R
 			reqLogger.Error( err, "Error updating Battlefield")
 			return reconcile.Result{}, err
 		}
+
+		//TODO: If the status update triggers an event, then we can just return. Otherwise do 
+		// reconcile.Result{Requeue: true}, nil
+		// return reconcile.Result{}, null
 	}
 	//reqLogger.Info("Players", "Num of players", len(battlefield.Spec.Players), "Names", battlefield.Spec.Players )
 
-	//Create service
+	//***********************
+	// Manage services
+	//***********************
 	for _, player := range battlefield.Spec.Players {
 		service := newServiceForPlayer(battlefield, &player)
 
@@ -140,6 +149,7 @@ func (r *ReconcileBattlefield) Reconcile(request reconcile.Request) (reconcile.R
 		// Set Battlefield instance as the owner and controller
 		if err := controllerutil.SetControllerReference(battlefield, service, r.scheme); err != nil {
 			reqLogger.Error( err, "Error setting owner for Service")
+			//TODO: break instead
 			return reconcile.Result{}, err
 		}
 
@@ -161,22 +171,23 @@ func (r *ReconcileBattlefield) Reconcile(request reconcile.Request) (reconcile.R
 		}
 	}
 
-	//Create pods
+	//***********************
+	// Manage pods
+	//***********************
 	for _, player := range battlefield.Spec.Players {
 		// Define a new Pod object
 		pod := newPodForPlayer(battlefield, &player)
-		
-		// Set Battlefield instance as the owner and controller
 		if err := controllerutil.SetControllerReference(battlefield, pod, r.scheme); err != nil {
 			reqLogger.Error( err, "Error setting owner for Pod")
-			return reconcile.Result{}, err
+			//TODO: break instead
+			return reconcile.Result{}, err			
 		}
 
 		// Check if this Pod already exists
 		found := &corev1.Pod{}
 		err = r.client.Get(ctx, types.NamespacedName{Name: pod.Name, Namespace: pod.Namespace}, found)
 		if err != nil {
-			if errors.IsNotFound(err) {
+			if errors.IsNotFound(err) && !timeExpired {
 				reqLogger.Info("Creating a new Pod", "Pod.Namespace", pod.Namespace, "Pod.Name", pod.Name)
 				err = r.client.Create(ctx, pod)
 				if err != nil {
@@ -188,13 +199,10 @@ func (r *ReconcileBattlefield) Reconcile(request reconcile.Request) (reconcile.R
 				return reconcile.Result{}, err
 			}
 		} else {
-
 			// Pod already exists 
 			//reqLogger.Info("Pod status", "Pod.Namespace", pod.Namespace, "Pod.Name", pod.Name, "Status", found.Status)
 
 			//check if container "player" is terminated
-			//if found.Status.Phase == corev1.PodRunning || found.Status.Phase == corev1.PodSucceeded || found.Status.Phase == corev1.PodFailed {  
-			
 			if found.DeletionTimestamp == nil {
 				//Check only if Pod was not deleted yet
 				containerStatePlayer := getContainerState(found.Status.ContainerStatuses,"player")
@@ -229,21 +237,23 @@ func (r *ReconcileBattlefield) Reconcile(request reconcile.Request) (reconcile.R
 	}
 
 
-		//Setup Battlefield status
-		if battlefield.Status.Phase == "init" {
-			reqLogger.Info("Start battlefield", "Name", battlefield.ObjectMeta.Name,  "Duration", battlefield.Spec.Duration, "HitFrequency", battlefield.Spec.HitFrequency, "Num of players", len(battlefield.Spec.Players) )
-	
-			battlefield.Status.Phase = "started"
-			t := metav1.Now()
-			battlefield.Status.StartTime = &t
-			
-			err := r.client.Status().Update(ctx, battlefield)
-			if err != nil {
-				reqLogger.Error( err, "Error updating Battlefield")
-				return reconcile.Result{}, err
-			}
-			
+	//***************************
+	// Post init - start game
+	//***************************
+	if battlefield.Status.Phase == "init" {
+		reqLogger.Info("Start battlefield", "Name", battlefield.ObjectMeta.Name,  "Duration", battlefield.Spec.Duration, "HitFrequency", battlefield.Spec.HitFrequency, "Num of players", len(battlefield.Spec.Players) )
+
+		battlefield.Status.Phase = "started"
+		t := metav1.Now()
+		battlefield.Status.StartTime = &t
+		
+		err := r.client.Status().Update(ctx, battlefield)
+		if err != nil {
+			reqLogger.Error( err, "Error updating Battlefield")
+			return reconcile.Result{}, err
 		}
+		
+	}
 
 	return reconcile.Result{}, nil
 }
@@ -349,8 +359,6 @@ func increaseDead(battlefield *rhtev1alpha1.Battlefield, playerName string) {
 		if playerName == playerStatus.Name {
 			
 			battlefield.Status.Scores[index].Dead++
-			
-			log.Info("increaseDead", "Scores", battlefield.Status.Scores )
 			return
 		}
 	}
