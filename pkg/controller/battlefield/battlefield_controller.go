@@ -88,11 +88,13 @@ type ReconcileBattlefield struct {
 // Result.Requeue is true, otherwise upon completion it will remove the work from the queue.
 func (r *ReconcileBattlefield) Reconcile(request reconcile.Request) (reconcile.Result, error) {
 	reqLogger := log.WithValues("Battlefield", request.Name)
-	//reqLogger.Info("Reconciling Battlefield")
+	ctx := context.TODO()
+
+	reqLogger.Info("Reconciling Battlefield")
 
 	// Fetch the Battlefield instance
 	battlefield := &rhtev1alpha1.Battlefield{}
-	err := r.client.Get(context.TODO(), request.NamespacedName, battlefield)
+	err := r.client.Get(ctx, request.NamespacedName, battlefield)
 	if err != nil {
 		if errors.IsNotFound(err) {
 			// Request object not found, could have been deleted after reconcile request.
@@ -101,55 +103,88 @@ func (r *ReconcileBattlefield) Reconcile(request reconcile.Request) (reconcile.R
 			return reconcile.Result{}, nil
 		}
 		// Error reading the object - requeue the request.
+		reqLogger.Error( err, "Error reading Battlefield")
 		return reconcile.Result{}, err
 	}
 
-	//reqLogger.Info("Battlefield", "Name", battlefield.ObjectMeta.Name,  "Duration", battlefield.Spec.Duration, "HitFrequency", battlefield.Spec.HitFrequency, "Num of players", len(battlefield.Spec.Players) )
+	//Setup Battlefield status
+	if battlefield.Status.Phase == "" {
+		reqLogger.Info("Init battlefield", "Name", battlefield.ObjectMeta.Name,  "Duration", battlefield.Spec.Duration, "HitFrequency", battlefield.Spec.HitFrequency, "Num of players", len(battlefield.Spec.Players) )
 
+		battlefield.Status.Phase = "init"
+
+		//Init player scores
+		for _, player := range battlefield.Spec.Players {
+			battlefield.Status.Scores = append(battlefield.Status.Scores,
+				rhtev1alpha1.PlayerStatus {
+					Name: player.Name,
+					Score: 0,
+					Dead: 0,
+				})
+		}
+		
+		err := r.client.Status().Update(ctx, battlefield)
+		if err != nil {
+			reqLogger.Error( err, "Error updating Battlefield")
+			return reconcile.Result{}, err
+		}
+	}
+	//reqLogger.Info("Players", "Num of players", len(battlefield.Spec.Players), "Names", battlefield.Spec.Players )
+
+	//Create service
 	for _, player := range battlefield.Spec.Players {
 		service := newServiceForPlayer(battlefield, &player)
 
+		//reqLogger.Info("Service", "name", service.ObjectMeta.Name)
+
 		// Set Battlefield instance as the owner and controller
 		if err := controllerutil.SetControllerReference(battlefield, service, r.scheme); err != nil {
+			reqLogger.Error( err, "Error setting owner for Service")
 			return reconcile.Result{}, err
 		}
 
 		// Check if this Service already exists
 		found := &corev1.Service{}
-		err = r.client.Get(context.TODO(), types.NamespacedName{Name: service.Name, Namespace: service.Namespace}, found)
+		err = r.client.Get(ctx, types.NamespacedName{Name: service.Name, Namespace: service.Namespace}, found)
 		if err != nil && errors.IsNotFound(err) {
 
 			reqLogger.Info("Creating a new Service", "Service.Namespace", service.Namespace, "Service.Name", service.Name)
-			err = r.client.Create(context.TODO(), service)
+			err = r.client.Create(ctx, service)
 			if err != nil {
+				reqLogger.Error( err, "Error creating Service")
 				return reconcile.Result{}, err
 			}
 
 		} else if err != nil {
+			reqLogger.Error( err, "Error reading Service")
 			return reconcile.Result{}, err
 		}
 	}
 
+	//Create pods
 	for _, player := range battlefield.Spec.Players {
 		// Define a new Pod object
 		pod := newPodForPlayer(battlefield, &player)
 		
 		// Set Battlefield instance as the owner and controller
 		if err := controllerutil.SetControllerReference(battlefield, pod, r.scheme); err != nil {
+			reqLogger.Error( err, "Error setting owner for Pod")
 			return reconcile.Result{}, err
 		}
 
 		// Check if this Pod already exists
 		found := &corev1.Pod{}
-		err = r.client.Get(context.TODO(), types.NamespacedName{Name: pod.Name, Namespace: pod.Namespace}, found)
+		err = r.client.Get(ctx, types.NamespacedName{Name: pod.Name, Namespace: pod.Namespace}, found)
 		if err != nil {
 			if errors.IsNotFound(err) {
 				reqLogger.Info("Creating a new Pod", "Pod.Namespace", pod.Namespace, "Pod.Name", pod.Name)
-				err = r.client.Create(context.TODO(), pod)
+				err = r.client.Create(ctx, pod)
 				if err != nil {
+					reqLogger.Error( err, "Error creating Pod")
 					return reconcile.Result{}, err
 				}
 			} else {
+				reqLogger.Error( err, "Error reading Pod")
 				return reconcile.Result{}, err
 			}
 		} else {
@@ -158,26 +193,57 @@ func (r *ReconcileBattlefield) Reconcile(request reconcile.Request) (reconcile.R
 			//reqLogger.Info("Pod status", "Pod.Namespace", pod.Namespace, "Pod.Name", pod.Name, "Status", found.Status)
 
 			//check if container "player" is terminated
-			if found.Status.Phase == corev1.PodRunning || found.Status.Phase == corev1.PodSucceeded || found.Status.Phase == corev1.PodFailed {  
-				//Check Pods that are not in Pending or Unknown to avoid duble points
+			//if found.Status.Phase == corev1.PodRunning || found.Status.Phase == corev1.PodSucceeded || found.Status.Phase == corev1.PodFailed {  
+			
+			if found.DeletionTimestamp == nil {
+				//Check only if Pod was not deleted yet
 				containerStatePlayer := getContainerState(found.Status.ContainerStatuses,"player")
 				if containerStatePlayer != nil && containerStatePlayer.Terminated != nil {
-					//TODO: Sometimed points are counted multiple times
-					killedBy := containerStatePlayer.Terminated.Message;
-					reqLogger.Info("Player terminated:", "Pod.Name", found.Name, "Killed by:",killedBy)
-					increaseScore(battlefield, killedBy)
-					//Delete Pod TODO: err.IfNotFound
-					err = r.client.Delete(context.TODO(),found)
+					//TODO: Sometimes points are counted multiple times because of racing conditions. client.Delete doesn't return if Pod was deleted before.
+					
+					err = r.client.Delete(ctx,found)
 					if err != nil {
-						reqLogger.Error( err, "Pod delete error")
+						reqLogger.Error( err, "Error deleting Pod")
+						return reconcile.Result{}, err
+					}
+
+					//Increase score counters
+					killedBy := containerStatePlayer.Terminated.Message;
+					reqLogger.Info("Player killed:", "Pod.Name", found.Name, "By:",killedBy)
+					increaseScore(battlefield, killedBy)
+					increaseDead(battlefield, player.Name)
+					reqLogger.Info("Increased score", "Status",  battlefield.Status)
+					err := r.client.Status().Update(ctx, battlefield)
+					if err != nil {
+						reqLogger.Error( err, "Error updating Battlefield")
 						return reconcile.Result{}, err
 					}
 				}
 			}
+							
+						
+					
 		}
 		//reqLogger.Info("Skip reconcile: Pod already exists", "Pod.Namespace", found.Namespace, "Pod.Name", found.Name)
 		
 	}
+
+
+		//Setup Battlefield status
+		if battlefield.Status.Phase == "init" {
+			reqLogger.Info("Start battlefield", "Name", battlefield.ObjectMeta.Name,  "Duration", battlefield.Spec.Duration, "HitFrequency", battlefield.Spec.HitFrequency, "Num of players", len(battlefield.Spec.Players) )
+	
+			battlefield.Status.Phase = "started"
+			t := metav1.Now()
+			battlefield.Status.StartTime = &t
+			
+			err := r.client.Status().Update(ctx, battlefield)
+			if err != nil {
+				reqLogger.Error( err, "Error updating Battlefield")
+				return reconcile.Result{}, err
+			}
+			
+		}
 
 	return reconcile.Result{}, nil
 }
@@ -270,7 +336,24 @@ func newPodForPlayer(battlefield *rhtev1alpha1.Battlefield, player *rhtev1alpha1
 }
 
 func increaseScore(battlefield *rhtev1alpha1.Battlefield, playerName string) {
+	for index,playerStatus := range battlefield.Status.Scores{
+		if playerName == playerStatus.Name {
+			battlefield.Status.Scores[index].Score++
+			return
+		}
+	}
+}
 
+func increaseDead(battlefield *rhtev1alpha1.Battlefield, playerName string) {
+	for index,playerStatus := range battlefield.Status.Scores{
+		if playerName == playerStatus.Name {
+			
+			battlefield.Status.Scores[index].Dead++
+			
+			log.Info("increaseDead", "Scores", battlefield.Status.Scores )
+			return
+		}
+	}
 }
 
 func getContainerState(containerStatuses []corev1.ContainerStatus, containerName string) *corev1.ContainerState {
