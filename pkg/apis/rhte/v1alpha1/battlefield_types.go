@@ -56,6 +56,7 @@ type PlayerStatus struct {
 	Name  string `json:"name"`
 	Kill  int    `json:"kill"`
 	Death int    `json:"death"`
+	Ready bool   `json:"ready"`
 }
 
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object

@@ -3,8 +3,8 @@ kind: Battlefield
 metadata:
   generateName: my-
 spec:
-  duration: 200
-  hitFrequency: 1
+  duration: 300
+  hitFrequency: 2
   players:
   - name: player0
     # image: default-route-openshift-image-registry.apps-crc.testing/myproject/fuse-player-app

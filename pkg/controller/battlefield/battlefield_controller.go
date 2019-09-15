@@ -134,16 +134,17 @@ func (r *ReconcileBattlefield) Reconcile(request reconcile.Request) (reconcile.R
 		err := r.client.Status().Update(ctx, battlefield)
 		if err != nil {
 			reqLogger.Error(err, "Error updating Battlefield")
-			return reconcile.Result{}, err
 		}
+		//The update will trigger a new request. To avoid racing conditions, it's better to always return.
+		return reconcile.Result{}, err
 
-		//TODO: If the status update triggers an event, then we can just return. Otherwise do
-		// reconcile.Result{Requeue: true}, nil
-		// return reconcile.Result{}, null
-	} else {
-		//check if time is expired
+		
+	} 
+	//check if time is expired
+	if battlefield.Status.StartTime != nil {
 		timeExpired = time.Since(battlefield.Status.StartTime.Time) > time.Duration(battlefield.Spec.Duration)*time.Second
 	}
+	
 
 	//reqLogger.Info("Players", "Num of players", len(battlefield.Spec.Players), "Names", battlefield.Spec.Players )
 
@@ -227,51 +228,54 @@ func (r *ReconcileBattlefield) Reconcile(request reconcile.Request) (reconcile.R
 		} else {
 			// Pod is found
 			//reqLogger.Info("Pod status", "Pod.Namespace", found.Namespace, "Pod.Name", found.Name, "Status", found.Status)
+			
+			//check if container "player" is terminated - update scores and delete the pod to stop any sidecars
+			containerStatusPlayer := getContainerStatus(found.Status.ContainerStatuses, "player")
+			if containerStatusPlayer != nil  { //It's expected to have a "player" container...
+				setPlayerReady(battlefield,player.Name,containerStatusPlayer.Ready)
 
-			//Only manage pod if it's not marked for deletetion yet
-			if found.DeletionTimestamp == nil {
+				//Only manage pod if it's not marked for deletetion yet
+				if found.DeletionTimestamp == nil {
+					if containerStatusPlayer.State.Terminated != nil {
+						//TODO: Sometimes points are counted multiple times because of racing conditions. client.Delete doesn't return if Pod was deleted before.
 
-				//check if container "player" is terminated - update scores and delete the pod to stop any sidecars
-				containerStatePlayer := getContainerState(found.Status.ContainerStatuses, "player")
-				if containerStatePlayer != nil && containerStatePlayer.Terminated != nil {
-					//TODO: Sometimes points are counted multiple times because of racing conditions. client.Delete doesn't return if Pod was deleted before.
-
-					reqLogger.Info("Killed - deleting Pod", "Pod.Name", found.Name)
-					err = r.client.Delete(ctx, found)
-					if err != nil {
-						reqLogger.Error(err, "Error deleting Pod", "Pod.Name", found.Name)
-						return reconcile.Result{}, err
-					}
-
-					//Increase score counters
-					killedBy := containerStatePlayer.Terminated.Message
-					reqLogger.Info("Player is killed", "Death", player.Name, "Kill", killedBy)
-					increaseKill(battlefield, killedBy)
-					increaseDeath(battlefield, player.Name)
-					//reqLogger.Info("Increased score", "Status",  battlefield.Status)
-					err := r.client.Status().Update(ctx, battlefield)
-					if err != nil {
-						reqLogger.Error(err, "Error updating Battlefield")
-						return reconcile.Result{}, err
-					}
-				} else {
-
-					//If time is up, delete pod
-					if timeExpired {
-						reqLogger.Info("Time is up - deleting pod", "Pod.Name", found.Name)
-						err := r.client.Delete(ctx, found)
+						reqLogger.Info("Killed - deleting Pod", "Pod.Name", found.Name)
+						err = r.client.Delete(ctx, found)
 						if err != nil {
-							reqLogger.Error(err, "Error deleting pod", "Pod.Name", found.Name)
+							reqLogger.Error(err, "Error deleting Pod", "Pod.Name", found.Name)
 							return reconcile.Result{}, err
 						}
-					}
 
+						//Increase score counters
+						killedBy := containerStatusPlayer.State.Terminated.Message
+						reqLogger.Info("Player is killed", "Death", player.Name, "Kill", killedBy)
+						increaseKill(battlefield, killedBy)
+						increaseDeath(battlefield, player.Name)
+						
+					} else {
+
+						//If time is up, delete pod
+						if timeExpired {
+							reqLogger.Info("Time is up - deleting pod", "Pod.Name", found.Name)
+							err := r.client.Delete(ctx, found)
+							if err != nil {
+								reqLogger.Error(err, "Error deleting pod", "Pod.Name", found.Name)
+								return reconcile.Result{}, err
+							}
+						}
+					}
+				}
+
+				//Update Battlefield resource status; TODO: Maybe check if update is required...
+				err := r.client.Status().Update(ctx, battlefield)
+				if err != nil {
+					reqLogger.Error(err, "Error updating Battlefield")
+					return reconcile.Result{}, err
 				}
 			}
+			
 
 		}
-		//reqLogger.Info("Skip reconcile: Pod already exists", "Pod.Namespace", found.Namespace, "Pod.Name", found.Name)
-
 	}
 
 	//***************************
@@ -287,9 +291,9 @@ func (r *ReconcileBattlefield) Reconcile(request reconcile.Request) (reconcile.R
 		err := r.client.Status().Update(ctx, battlefield)
 		if err != nil {
 			reqLogger.Error(err, "Error updating Battlefield")
-			return reconcile.Result{}, err
 		}
-
+		//Update triggers a new request - let's return to avoid racing conditions
+		return reconcile.Result{}, err
 	}
 
 	//***************************
@@ -310,6 +314,7 @@ func (r *ReconcileBattlefield) Reconcile(request reconcile.Request) (reconcile.R
 		}
 	}
 
+	reqLogger.Info("Reconciling done")
 	return reconcile.Result{}, nil
 }
 
@@ -394,6 +399,14 @@ func newPodForPlayer(battlefield *rhtev1alpha1.Battlefield, player *rhtev1alpha1
 							Value: strconv.Itoa(battlefield.Spec.HitFrequency * 1000),
 						},
 					},
+					ReadinessProbe: &corev1.Probe{
+						Handler: corev1.Handler{
+							HTTPGet: &corev1.HTTPGetAction{
+								Path: "/health",
+								Port: intstr.FromInt(8080),
+							},
+						},
+					},
 				},
 			},
 			RestartPolicy: corev1.RestartPolicyNever,
@@ -413,18 +426,27 @@ func increaseKill(battlefield *rhtev1alpha1.Battlefield, playerName string) {
 func increaseDeath(battlefield *rhtev1alpha1.Battlefield, playerName string) {
 	for index, playerStatus := range battlefield.Status.Scores {
 		if playerName == playerStatus.Name {
-
 			battlefield.Status.Scores[index].Death++
 			return
 		}
 	}
 }
 
-func getContainerState(containerStatuses []corev1.ContainerStatus, containerName string) *corev1.ContainerState {
+func setPlayerReady(battlefield *rhtev1alpha1.Battlefield, playerName string, ready bool) {
+	for index, playerStatus := range battlefield.Status.Scores {
+		if playerName == playerStatus.Name {
+			battlefield.Status.Scores[index].Ready = ready
+			return
+		}
+	}
+}
+
+
+func getContainerStatus(containerStatuses []corev1.ContainerStatus, containerName string) *corev1.ContainerStatus {
 	//containerState := &corev1.ContainerState{}
 	for _, containerStatus := range containerStatuses {
 		if containerStatus.Name == containerName {
-			return &containerStatus.State
+			return &containerStatus
 		}
 	}
 	return nil

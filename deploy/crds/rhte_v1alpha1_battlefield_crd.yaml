@@ -9,13 +9,6 @@ spec:
     listKind: BattlefieldList
     plural: battlefields
     singular: battlefield
-    shortNames:
-    - bf
-  additionalPrinterColumns:
-  - name: Phase
-    type: string
-    description: Game status
-    JSONPath: .status.phase
   scope: Namespaced
   subresources:
     status: {}
@@ -77,10 +70,13 @@ spec:
                     type: integer
                   name:
                     type: string
+                  ready:
+                    type: boolean
                 required:
                 - name
                 - kill
                 - death
+                - ready
                 type: object
               type: array
             startTime:
