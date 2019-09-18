@@ -228,11 +228,17 @@ func (r *ReconcileBattlefield) Reconcile(request reconcile.Request) (reconcile.R
 		} else {
 			// Pod is found
 			//reqLogger.Info("Pod status", "Pod.Namespace", found.Namespace, "Pod.Name", found.Name, "Status", found.Status)
-			
+
+			//TODO: Add current health to termination log
+			//TODO: In case of error, the battlefield status may not be updated. Ideally we should build status independently from respawn actions.
+
 			//check if container "player" is terminated - update scores and delete the pod to stop any sidecars
 			containerStatusPlayer := getContainerStatus(found.Status.ContainerStatuses, "player")
 			if containerStatusPlayer != nil  { //It's expected to have a "player" container...
 				setPlayerReady(battlefield,player.Name,containerStatusPlayer.Ready)
+				if containerStatusPlayer.Ready || timeExpired {
+					setKilledBy(battlefield,player.Name,"")
+				}
 
 				//Only manage pod if it's not marked for deletetion yet
 				if found.DeletionTimestamp == nil {
@@ -250,7 +256,7 @@ func (r *ReconcileBattlefield) Reconcile(request reconcile.Request) (reconcile.R
 						killedBy := containerStatusPlayer.State.Terminated.Message
 						reqLogger.Info("Player is killed", "Death", player.Name, "Kill", killedBy)
 						increaseKill(battlefield, killedBy)
-						increaseDeath(battlefield, player.Name)
+						setKilledBy(battlefield, player.Name, killedBy)
 						
 					} else {
 
@@ -291,9 +297,10 @@ func (r *ReconcileBattlefield) Reconcile(request reconcile.Request) (reconcile.R
 		err := r.client.Status().Update(ctx, battlefield)
 		if err != nil {
 			reqLogger.Error(err, "Error updating Battlefield")
+			return reconcile.Result{}, err
 		}
-		//Update triggers a new request - let's return to avoid racing conditions
-		return reconcile.Result{}, err
+		//Update triggers a new request right away so it's ok to return here - we use this return to do a reconciliation when time expires
+		return reconcile.Result{RequeueAfter: time.Duration(battlefield.Spec.Duration) * time.Second}, err
 	}
 
 	//***************************
@@ -342,6 +349,7 @@ func newServiceForPlayer(battlefield *rhtev1alpha1.Battlefield, player *rhtev1al
 			},
 			Selector: map[string]string{
 				"player": player.Name,
+				"battlefield": battlefield.Name,
 			},
 			Type: corev1.ServiceTypeClusterIP,
 		},
@@ -423,7 +431,7 @@ func increaseKill(battlefield *rhtev1alpha1.Battlefield, playerName string) {
 	}
 }
 
-func increaseDeath(battlefield *rhtev1alpha1.Battlefield, playerName string) {
+func increaseDeath(battlefield *rhtev1alpha1.Battlefield, playerName string, killedBy string) {
 	for index, playerStatus := range battlefield.Status.Scores {
 		if playerName == playerStatus.Name {
 			battlefield.Status.Scores[index].Death++
@@ -436,6 +444,16 @@ func setPlayerReady(battlefield *rhtev1alpha1.Battlefield, playerName string, re
 	for index, playerStatus := range battlefield.Status.Scores {
 		if playerName == playerStatus.Name {
 			battlefield.Status.Scores[index].Ready = ready
+			return
+		}
+	}
+}
+
+
+func setKilledBy(battlefield *rhtev1alpha1.Battlefield, playerName string, killedBy string) {
+	for index, playerStatus := range battlefield.Status.Scores {
+		if playerName == playerStatus.Name {
+			battlefield.Status.Scores[index].KilledBy=killedBy
 			return
 		}
 	}

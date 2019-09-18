@@ -3,13 +3,13 @@ kind: Battlefield
 metadata:
   generateName: my-
 spec:
-  duration: 300
+  duration: 180
   hitFrequency: 2
   players:
   - name: player0
     # image: default-route-openshift-image-registry.apps-crc.testing/myproject/fuse-player-app
     image: quay.io/bszeti/fuse-player:latest
-    maxhealth: 10
+    maxhealth: 1000
   - name: player1
     image: quay.io/bszeti/fuse-player:latest
     maxhealth: 3
