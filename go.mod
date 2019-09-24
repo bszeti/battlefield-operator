@@ -1,9 +1,11 @@
 module github.com/bszeti/battlefield-operator
 
 require (
+	github.com/aspenmesh/istio-client-go v0.0.0-20190913180823-8c72de05fa40
 	github.com/go-openapi/spec v0.19.0
 	github.com/operator-framework/operator-sdk v0.10.1-0.20190909224314-b3c2cc0bef95
 	github.com/spf13/pflag v1.0.3
+	istio.io/api v0.0.0-20190924012112-a90f8772954b
 	k8s.io/api v0.0.0-20190612125737-db0771252981
 	k8s.io/apimachinery v0.0.0-20190612125636-6a5db36e93ad
 	k8s.io/client-go v11.0.0+incompatible

@@ -49,6 +49,7 @@ type Player struct {
 	Name      string `json:"name"`
 	Image     string `json:"image,omitempty"`
 	MaxHealth int    `json:"maxhealth"`
+	Shield 	  bool   `json:"shield"`
 }
 
 // PlayerStatus records score of a player

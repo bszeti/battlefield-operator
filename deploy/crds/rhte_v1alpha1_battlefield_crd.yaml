@@ -45,9 +45,12 @@ spec:
                     type: integer
                   name:
                     type: string
+                  shield:
+                    type: boolean
                 required:
                 - name
                 - maxhealth
+                - shield
                 type: object
               type: array
           required:
@@ -68,6 +71,8 @@ spec:
                   kill:
                     format: int64
                     type: integer
+                  killedby:
+                    type: string
                   name:
                     type: string
                   ready:
@@ -77,6 +82,7 @@ spec:
                 - kill
                 - death
                 - ready
+                - killedby
                 type: object
               type: array
             startTime:

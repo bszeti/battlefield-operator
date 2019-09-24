@@ -21,6 +21,10 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 	logf "sigs.k8s.io/controller-runtime/pkg/runtime/log"
 	"sigs.k8s.io/controller-runtime/pkg/source"
+
+	//istio "istio.io/api/networking/v1alpha3"
+	istio "github.com/aspenmesh/istio-client-go/pkg/apis/networking/v1alpha3"
+	istiov1alpha3 "istio.io/api/networking/v1alpha3"
 )
 
 var log = logf.Log.WithName("controller_battlefield")
@@ -50,6 +54,12 @@ func add(mgr manager.Manager, r reconcile.Reconciler) error {
 	}
 
 	// Watch for changes to primary resource Battlefield
+	err = c.Watch(&source.Kind{Type: &rhtev1alpha1.Battlefield{}}, &handler.EnqueueRequestForObject{})
+	if err != nil {
+		return err
+	}
+
+	// TODO:REMOVE
 	err = c.Watch(&source.Kind{Type: &rhtev1alpha1.Battlefield{}}, &handler.EnqueueRequestForObject{})
 	if err != nil {
 		return err
@@ -193,6 +203,51 @@ func (r *ReconcileBattlefield) Reconcile(request reconcile.Request) (reconcile.R
 				}
 			}
 		}
+
+		//Manage Istio VirtualService
+		virtualService := newVirtualServiceForPlayer(battlefield, &player)
+		reqLogger.Info("VS:","json",virtualService)
+
+		foundVirtualService := &istio.VirtualService{}
+		err = r.client.Get(ctx, types.NamespacedName{Name: virtualService.Name, Namespace: virtualService.Namespace}, foundVirtualService)
+		if err != nil {
+			if errors.IsNotFound(err) {
+				if !timeExpired { //Create missing VirtualService if time is not expired
+					reqLogger.Info("Creating VirtualService", "VirtualService.Name", virtualService.Name)
+					err := r.client.Create(ctx, virtualService)
+					if err != nil {
+						reqLogger.Error(err, "Error creating VirtualService", "VirtualService.Name", virtualService.Name)
+						return reconcile.Result{}, err
+					}
+				}
+			} else {
+				reqLogger.Error(err, "Error reading VirtualService", "VirtualService.Name", virtualService.Name)
+				return reconcile.Result{}, err
+			}
+		} else {
+			//VirtualService is found and not deleted
+			if foundVirtualService.DeletionTimestamp == nil {
+
+				if !timeExpired {
+					//TODO: Compare old and new VirtualService
+					reqLogger.Info("Updating VirtualService", "VirtualService.Name", virtualService.Name)
+					err := r.client.Update(ctx, foundVirtualService) //TODO: Modify fields of foundVirtualService to match virtualService
+					if err != nil {
+						reqLogger.Error(err, "Error creating VirtualService", "virtualService", virtualService)
+						return reconcile.Result{}, err
+					}
+				}
+				//If time is up, delete foundVirtualService
+				if timeExpired {
+					reqLogger.Info("Time is up - deleting VirtualService", "VirtualService.Name", foundVirtualService.Name)
+					err := r.client.Delete(ctx, foundVirtualService)
+					if err != nil {
+						reqLogger.Error(err, "Error deleting VirtualService", "VirtualService.Name", foundVirtualService.Name)
+						return reconcile.Result{}, err
+					}
+				}
+			}
+		}		
 	}
 
 	//***********************
@@ -354,6 +409,44 @@ func newServiceForPlayer(battlefield *rhtev1alpha1.Battlefield, player *rhtev1al
 			Type: corev1.ServiceTypeClusterIP,
 		},
 	}
+}
+
+func newVirtualServiceForPlayer(battlefield *rhtev1alpha1.Battlefield, player *rhtev1alpha1.Player) *istio.VirtualService {
+	// labels := map[string]string{
+	// 	"app":         battlefield.Name,
+	// 	"battlefield": battlefield.Name,
+	// 	"player":      player.Name,
+	// }
+
+	resourceNameForPlayer := battlefield.Name + "-player-" + player.Name
+
+	vs := istio.VirtualService {
+		ObjectMeta: metav1.ObjectMeta{
+			Name:        resourceNameForPlayer,
+			Namespace:   battlefield.Namespace,
+		},
+		Spec: istio.VirtualServiceSpec {
+			VirtualService: istiov1alpha3.VirtualService{
+				Hosts: []string{
+					resourceNameForPlayer,
+				},
+				Http: []*istiov1alpha3.HTTPRoute{
+					&istiov1alpha3.HTTPRoute{
+						Route: []*istiov1alpha3.HTTPRouteDestination{
+							&istiov1alpha3.HTTPRouteDestination{
+								Destination: &istiov1alpha3.Destination{
+									Host: resourceNameForPlayer,
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	return &vs
+
 }
 
 // Pod definition for a player
