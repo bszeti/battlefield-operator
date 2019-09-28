@@ -231,7 +231,8 @@ func (r *ReconcileBattlefield) Reconcile(request reconcile.Request) (reconcile.R
 				if !timeExpired {
 					//TODO: Compare old and new VirtualService
 					reqLogger.Info("Updating VirtualService", "VirtualService.Name", virtualService.Name)
-					err := r.client.Update(ctx, foundVirtualService) //TODO: Modify fields of foundVirtualService to match virtualService
+					foundVirtualService.Spec=virtualService.Spec
+					err := r.client.Update(ctx, foundVirtualService)
 					if err != nil {
 						reqLogger.Error(err, "Error creating VirtualService", "virtualService", virtualService)
 						return reconcile.Result{}, err
@@ -311,6 +312,7 @@ func (r *ReconcileBattlefield) Reconcile(request reconcile.Request) (reconcile.R
 						killedBy := containerStatusPlayer.State.Terminated.Message
 						reqLogger.Info("Player is killed", "Death", player.Name, "Kill", killedBy)
 						increaseKill(battlefield, killedBy)
+						increaseDeath(battlefield,player.Name)
 						setKilledBy(battlefield, player.Name, killedBy)
 						
 					} else {
@@ -445,6 +447,20 @@ func newVirtualServiceForPlayer(battlefield *rhtev1alpha1.Battlefield, player *r
 		},
 	}
 
+	if player.Shield {
+		vs.Spec.VirtualService.Http[0].Fault = 
+			&istiov1alpha3.HTTPFaultInjection{
+				Abort: &istiov1alpha3.HTTPFaultInjection_Abort{
+					Percentage: &istiov1alpha3.Percent{
+						Value: 100.0,
+					},
+					ErrorType: &istiov1alpha3.HTTPFaultInjection_Abort_HttpStatus{
+						HttpStatus: 503,
+					},
+				},
+			}
+	}
+
 	return &vs
 
 }
@@ -524,7 +540,7 @@ func increaseKill(battlefield *rhtev1alpha1.Battlefield, playerName string) {
 	}
 }
 
-func increaseDeath(battlefield *rhtev1alpha1.Battlefield, playerName string, killedBy string) {
+func increaseDeath(battlefield *rhtev1alpha1.Battlefield, playerName string) {
 	for index, playerStatus := range battlefield.Status.Scores {
 		if playerName == playerStatus.Name {
 			battlefield.Status.Scores[index].Death++
