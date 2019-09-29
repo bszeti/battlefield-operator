@@ -139,6 +139,7 @@ github.com/gogo/protobuf v1.2.1 h1:/s5zKNz0uPFCZ5hddgPdo2TK2TVrUNMn0OOX8/aZMTE=
 github.com/gogo/protobuf v1.2.1/go.mod h1:hp+jE20tsWTFYpLwKvXlhS1hjn+gTNwPg2I6zVXpSg4=
 github.com/gogo/protobuf v1.2.2-0.20190730201129-28a6bbf47e48 h1:X+zN6RZXsvnrSJaAIQhZezPfAfvsqihKKR8oiLHid34=
 github.com/gogo/protobuf v1.2.2-0.20190730201129-28a6bbf47e48/go.mod h1:SlYgWuQ5SjCEi6WLHjHCa1yvBfUnHcTbrrZtXPKa29o=
+github.com/gogo/protobuf v1.3.0 h1:G8O7TerXerS4F6sx9OV7/nRfJdnXgHZu/S/7F2SN+UE=
 github.com/golang/glog v0.0.0-20141105023935-44145f04b68c/go.mod h1:SBH7ygxi8pfUlaOkMMuAQtPIUF8ecWP5IEl/CR7VP2Q=
 github.com/golang/glog v0.0.0-20160126235308-23def4e6c14b/go.mod h1:SBH7ygxi8pfUlaOkMMuAQtPIUF8ecWP5IEl/CR7VP2Q=
 github.com/golang/groupcache v0.0.0-20180924190550-6f2cf27854a4/go.mod h1:cIg4eruTrX1D+g88fzRXU5OdNfaM+9IcxsU14FzY7Hc=
@@ -511,6 +512,7 @@ istio.io/api v0.0.0-20190924012112-a90f8772954b h1:Fn92QYGyIQeXm0thtVpOmFliGf9kk
 istio.io/api v0.0.0-20190924012112-a90f8772954b/go.mod h1:4kjWLdTfJktvClbmYc2lj0FnSX+drbhYfX3c0gcCEUE=
 istio.io/api v0.0.0-20190924174035-b08fcbadadff h1:KtIhI8UlPWK9hZm0PpTEHeF3GxWCYEBzjkxSFrRjv8g=
 istio.io/api v0.0.0-20190925180116-1b594bcab992 h1:ithQ7NjUw8T8L+m+XKmgDU1I2WfCLZuPpmRkIWZ9jEw=
+istio.io/gogo-genproto v0.0.0-20190731221249-06e20ada0df2 h1:AZ+aTgKSBmBc6KtZU+P+Wr2dOdPriJu09cU8wGMG+/M=
 istio.io/gogo-genproto v0.0.0-20190731221249-06e20ada0df2/go.mod h1:IjvrbUlRbbw4JCpsgvgihcz9USUwEoNTL/uwMtyV5yk=
 k8s.io/api v0.0.0-20190222213804-5cb15d344471 h1:MzQGt8qWQCR+39kbYRd0uQqsvSidpYqJLFeWiJ9l4OE=
 k8s.io/api v0.0.0-20190222213804-5cb15d344471/go.mod h1:iuAfoD4hCxJ8Onx9kaTIt30j7jUFS00AXQi6QMi99vA=

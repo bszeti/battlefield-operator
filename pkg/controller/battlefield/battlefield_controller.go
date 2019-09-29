@@ -204,9 +204,8 @@ func (r *ReconcileBattlefield) Reconcile(request reconcile.Request) (reconcile.R
 			}
 		}
 
-		//Manage Istio VirtualService
+		//Manage Istio VirtualService - for shield
 		virtualService := newVirtualServiceForPlayer(battlefield, &player)
-		reqLogger.Info("VS:","json",virtualService)
 
 		foundVirtualService := &istio.VirtualService{}
 		err = r.client.Get(ctx, types.NamespacedName{Name: virtualService.Name, Namespace: virtualService.Namespace}, foundVirtualService)
@@ -248,7 +247,42 @@ func (r *ReconcileBattlefield) Reconcile(request reconcile.Request) (reconcile.R
 					}
 				}
 			}
-		}		
+		}	
+		
+		//VirtualService for disqualified players
+		virtualService = newVirtualServiceForDisqualifiedPlayer(battlefield, &player)
+
+		foundVirtualService = &istio.VirtualService{}
+		err = r.client.Get(ctx, types.NamespacedName{Name: virtualService.Name, Namespace: virtualService.Namespace}, foundVirtualService)
+		if err != nil {
+			if errors.IsNotFound(err) {
+				if !timeExpired && player.Disqualified{ //Create missing VirtualService if player is diqualified
+					reqLogger.Info("Creating VirtualService for disqualified", "VirtualService.Name", virtualService.Name)
+					err := r.client.Create(ctx, virtualService)
+					if err != nil {
+						reqLogger.Error(err, "Error creating VirtualService for disqualified", "VirtualService.Name", virtualService.Name)
+						return reconcile.Result{}, err
+					}
+				}
+			} else {
+				reqLogger.Error(err, "Error reading VirtualService for disqualified", "VirtualService.Name", virtualService.Name)
+				return reconcile.Result{}, err
+			}
+		} else {
+			//VirtualService is found and not deleted
+			if foundVirtualService.DeletionTimestamp == nil {
+
+				//If time is up or the player is not disqualified, delete foundVirtualService
+				if timeExpired || ! player.Disqualified{
+					reqLogger.Info("Time is up - deleting VirtualService for disqualified", "VirtualService.Name", foundVirtualService.Name)
+					err := r.client.Delete(ctx, foundVirtualService)
+					if err != nil {
+						reqLogger.Error(err, "Error deleting VirtualService for disqualified", "VirtualService.Name", foundVirtualService.Name)
+						return reconcile.Result{}, err
+					}
+				}
+			}
+		}	
 	}
 
 	//***********************
@@ -413,12 +447,13 @@ func newServiceForPlayer(battlefield *rhtev1alpha1.Battlefield, player *rhtev1al
 	}
 }
 
+//Virtual Service for shield
 func newVirtualServiceForPlayer(battlefield *rhtev1alpha1.Battlefield, player *rhtev1alpha1.Player) *istio.VirtualService {
-	// labels := map[string]string{
-	// 	"app":         battlefield.Name,
-	// 	"battlefield": battlefield.Name,
-	// 	"player":      player.Name,
-	// }
+	 labels := map[string]string{
+	 	"app":         battlefield.Name,
+	 	"battlefield": battlefield.Name,
+	 	"player":      player.Name,
+	 }
 
 	resourceNameForPlayer := battlefield.Name + "-player-" + player.Name
 
@@ -426,6 +461,7 @@ func newVirtualServiceForPlayer(battlefield *rhtev1alpha1.Battlefield, player *r
 		ObjectMeta: metav1.ObjectMeta{
 			Name:        resourceNameForPlayer,
 			Namespace:   battlefield.Namespace,
+			Labels:    labels,
 		},
 		Spec: istio.VirtualServiceSpec {
 			VirtualService: istiov1alpha3.VirtualService{
@@ -462,6 +498,71 @@ func newVirtualServiceForPlayer(battlefield *rhtev1alpha1.Battlefield, player *r
 	}
 
 	return &vs
+
+}
+
+//Virtual Service for shield
+func newVirtualServiceForDisqualifiedPlayer(battlefield *rhtev1alpha1.Battlefield, player *rhtev1alpha1.Player) *istio.VirtualService {
+	labels := map[string]string{
+		//"app":         battlefield.Name,
+		//"battlefield": battlefield.Name,
+		"player":      player.Name,
+	}
+
+   resourceNameForPlayer := battlefield.Name + "-disqualified-" + player.Name
+
+   //List of targets for this player - practically other's services
+	var targets []string
+	for _, target := range battlefield.Spec.Players {
+		if player.Name != target.Name {
+			targets = append(targets, battlefield.Name+"-player-"+target.Name)
+		}
+	}
+
+   vs := istio.VirtualService {
+	   ObjectMeta: metav1.ObjectMeta{
+		   Name:        resourceNameForPlayer,
+		   Namespace:   battlefield.Namespace,
+		   Labels:    labels,
+	   },
+	   Spec: istio.VirtualServiceSpec {
+		   VirtualService: istiov1alpha3.VirtualService{
+			   Hosts: targets,
+			   Http: []*istiov1alpha3.HTTPRoute{
+				   &istiov1alpha3.HTTPRoute{
+					   Match: []*istiov1alpha3.HTTPMatchRequest{
+							&istiov1alpha3.HTTPMatchRequest{
+								SourceLabels: map[string]string{
+									"app":         battlefield.Name,
+									"battlefield": battlefield.Name,
+									"player":      player.Name,
+								},
+							},
+					   },
+					   Route: []*istiov1alpha3.HTTPRouteDestination{
+						   &istiov1alpha3.HTTPRouteDestination{
+							   Destination: &istiov1alpha3.Destination{
+								   Host: "ignored",
+							   },
+						   },
+					   	},
+					   	Fault: &istiov1alpha3.HTTPFaultInjection{
+							Abort: &istiov1alpha3.HTTPFaultInjection_Abort{
+								Percentage: &istiov1alpha3.Percent{
+									Value: 100.0,
+								},
+								ErrorType: &istiov1alpha3.HTTPFaultInjection_Abort_HttpStatus{
+									HttpStatus: 504,
+								},
+							},
+		   				},
+				   },
+			   },
+		   },
+	   },
+   }
+
+   return &vs
 
 }
 

@@ -11,6 +11,7 @@ spec:
     image: quay.io/bszeti/fuse-player:latest
     maxhealth: 1000
     shield: false
+    disqualified: true
   - name: player1
     image: quay.io/bszeti/fuse-player:latest
     maxhealth: 3
@@ -18,4 +19,4 @@ spec:
   - name: player2
     image: quay.io/bszeti/fuse-player:latest
     maxhealth: 3
-    shield: true
+    shield: false
