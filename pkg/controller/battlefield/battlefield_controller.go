@@ -204,7 +204,7 @@ func (r *ReconcileBattlefield) Reconcile(request reconcile.Request) (reconcile.R
 			}
 		}
 
-		//Manage Istio VirtualService - for shield
+		//Manage Istio VirtualService - for shield and default
 		virtualService := newVirtualServiceForPlayer(battlefield, &player)
 
 		foundVirtualService := &istio.VirtualService{}
@@ -491,7 +491,7 @@ func newVirtualServiceForPlayer(battlefield *rhtev1alpha1.Battlefield, player *r
 						Value: 100.0,
 					},
 					ErrorType: &istiov1alpha3.HTTPFaultInjection_Abort_HttpStatus{
-						HttpStatus: 503,
+						HttpStatus: 504,
 					},
 				},
 			}
@@ -552,7 +552,7 @@ func newVirtualServiceForDisqualifiedPlayer(battlefield *rhtev1alpha1.Battlefiel
 									Value: 100.0,
 								},
 								ErrorType: &istiov1alpha3.HTTPFaultInjection_Abort_HttpStatus{
-									HttpStatus: 504,
+									HttpStatus: 505,
 								},
 							},
 		   				},
