@@ -38,6 +38,8 @@ spec:
             players:
               items:
                 properties:
+                  disqualified:
+                    type: boolean
                   image:
                     type: string
                   maxhealth:
@@ -51,6 +53,7 @@ spec:
                 - name
                 - maxhealth
                 - shield
+                - disqualified
                 type: object
               type: array
           required:
@@ -65,6 +68,9 @@ spec:
             scores:
               items:
                 properties:
+                  currentHealth:
+                    format: int64
+                    type: integer
                   death:
                     format: int64
                     type: integer
@@ -83,6 +89,7 @@ spec:
                 - death
                 - ready
                 - killedby
+                - currentHealth
                 type: object
               type: array
             startTime:

@@ -5,6 +5,9 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"net/http"
+	"io/ioutil"
+	
 
 	rhtev1alpha1 "github.com/bszeti/battlefield-operator/pkg/apis/rhte/v1alpha1"
 	corev1 "k8s.io/api/core/v1"
@@ -33,6 +36,11 @@ var log = logf.Log.WithName("controller_battlefield")
 * USER ACTION REQUIRED: This is a scaffold file intended for the user to modify with their own Controller
 * business logic.  Delete these comments after modifying this file.*
  */
+
+ var netClient = &http.Client{
+	Timeout: time.Second * 1,
+  }
+
 
 // Add creates a new Battlefield Controller and adds it to the Manager. The Manager will set fields on the Controller
 // and Start it when the Manager is Started.
@@ -134,6 +142,7 @@ func (r *ReconcileBattlefield) Reconcile(request reconcile.Request) (reconcile.R
 					Name:  player.Name,
 					Kill:  0,
 					Death: 0,
+					CurrentHealth: player.MaxHealth,
 				})
 		}
 
@@ -229,7 +238,7 @@ func (r *ReconcileBattlefield) Reconcile(request reconcile.Request) (reconcile.R
 
 				if !timeExpired {
 					//TODO: Compare old and new VirtualService
-					reqLogger.Info("Updating VirtualService", "VirtualService.Name", virtualService.Name)
+					//reqLogger.Info("Updating VirtualService", "VirtualService.Name", virtualService.Name)
 					foundVirtualService.Spec=virtualService.Spec
 					err := r.client.Update(ctx, foundVirtualService)
 					if err != nil {
@@ -319,7 +328,6 @@ func (r *ReconcileBattlefield) Reconcile(request reconcile.Request) (reconcile.R
 			// Pod is found
 			//reqLogger.Info("Pod status", "Pod.Namespace", found.Namespace, "Pod.Name", found.Name, "Status", found.Status)
 
-			//TODO: Add current health to termination log
 			//TODO: In case of error, the battlefield status may not be updated. Ideally we should build status independently from respawn actions.
 
 			//check if container "player" is terminated - update scores and delete the pod to stop any sidecars
@@ -348,8 +356,29 @@ func (r *ReconcileBattlefield) Reconcile(request reconcile.Request) (reconcile.R
 						increaseKill(battlefield, killedBy)
 						increaseDeath(battlefield,player.Name)
 						setKilledBy(battlefield, player.Name, killedBy)
+						setCurrentHealth(battlefield, player.Name, 0)
 						
 					} else {
+
+						if containerStatusPlayer.Ready  {
+							//Get current health from pod
+							url := "http://" + found.Name + "/api/status/currenthealth"
+							response, err := netClient.Get(url)
+							if err != nil {
+								//reqLogger.Error(err, "Error getting health for player", "url", url)
+							} else {
+
+								defer response.Body.Close()
+								data, _ := ioutil.ReadAll(response.Body)
+								currentHealth, strerr := strconv.Atoi(string(data))
+								if strerr == nil {
+									//Update current health in status
+									setCurrentHealth(battlefield, player.Name, currentHealth)
+									reqLogger.Info("CurrentHealth","player", player.Name, "CurrentHealth", currentHealth)
+								}
+							}
+						}
+						
 
 						//If time is up, delete pod
 						if timeExpired {
@@ -359,6 +388,7 @@ func (r *ReconcileBattlefield) Reconcile(request reconcile.Request) (reconcile.R
 								reqLogger.Error(err, "Error deleting pod", "Pod.Name", found.Name)
 								return reconcile.Result{}, err
 							}
+							setCurrentHealth(battlefield, player.Name, 0)
 						}
 					}
 				}
@@ -410,9 +440,13 @@ func (r *ReconcileBattlefield) Reconcile(request reconcile.Request) (reconcile.R
 			reqLogger.Error(err, "Error updating Battlefield")
 			return reconcile.Result{}, err
 		}
+		
 	}
 
 	reqLogger.Info("Reconciling done")
+	if !timeExpired {
+		return reconcile.Result{RequeueAfter: time.Millisecond * 200}, nil
+	}
 	return reconcile.Result{}, nil
 }
 
@@ -495,7 +529,19 @@ func newVirtualServiceForPlayer(battlefield *rhtev1alpha1.Battlefield, player *r
 					},
 				},
 			}
+		vs.Spec.VirtualService.Http[0].Match = 
+			[]*istiov1alpha3.HTTPMatchRequest{
+				&istiov1alpha3.HTTPMatchRequest{
+					Uri: &istiov1alpha3.StringMatch{
+						MatchType: &istiov1alpha3.StringMatch_Prefix{
+							Prefix: "/api/hit",
+						},
+					},
+				},
+		   }
 	}
+
+	// TODO: Force HTPP 200 if player is not ready. 
 
 	return &vs
 
@@ -504,8 +550,8 @@ func newVirtualServiceForPlayer(battlefield *rhtev1alpha1.Battlefield, player *r
 //Virtual Service for shield
 func newVirtualServiceForDisqualifiedPlayer(battlefield *rhtev1alpha1.Battlefield, player *rhtev1alpha1.Player) *istio.VirtualService {
 	labels := map[string]string{
-		//"app":         battlefield.Name,
-		//"battlefield": battlefield.Name,
+		"app":         battlefield.Name,
+		"battlefield": battlefield.Name,
 		"player":      player.Name,
 	}
 
@@ -659,6 +705,15 @@ func setPlayerReady(battlefield *rhtev1alpha1.Battlefield, playerName string, re
 	}
 }
 
+// func getPlayerReady(battlefield *rhtev1alpha1.Battlefield, playerName string) bool {
+// 	for index, playerStatus := range battlefield.Status.Scores {
+// 		if playerName == playerStatus.Name {
+// 			return battlefield.Status.Scores[index].Ready
+// 		}
+// 	}
+// 	return false;
+// }
+
 
 func setKilledBy(battlefield *rhtev1alpha1.Battlefield, playerName string, killedBy string) {
 	for index, playerStatus := range battlefield.Status.Scores {
@@ -669,6 +724,14 @@ func setKilledBy(battlefield *rhtev1alpha1.Battlefield, playerName string, kille
 	}
 }
 
+func setCurrentHealth(battlefield *rhtev1alpha1.Battlefield, playerName string, currentHealth int) {
+	for index, playerStatus := range battlefield.Status.Scores {
+		if playerName == playerStatus.Name {
+			battlefield.Status.Scores[index].CurrentHealth=currentHealth
+			return
+		}
+	}
+}
 
 func getContainerStatus(containerStatuses []corev1.ContainerStatus, containerName string) *corev1.ContainerStatus {
 	//containerState := &corev1.ContainerState{}

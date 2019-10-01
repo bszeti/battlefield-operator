@@ -59,7 +59,8 @@ type PlayerStatus struct {
 	Kill  int    `json:"kill"`
 	Death int    `json:"death"`
 	Ready bool   `json:"ready"`
-	KilledBy string `json:"killedby"`
+	KilledBy string 	`json:"killedby"`
+	CurrentHealth int	`json:"currentHealth"`
 }
 
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
