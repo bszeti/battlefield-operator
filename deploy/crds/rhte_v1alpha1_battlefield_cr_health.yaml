@@ -1,28 +1,28 @@
 apiVersion: rhte.demojam.battlefield/v1alpha1
 kind: Battlefield
 metadata:
-  name: demofield
+  generateName: bf-
 spec:
-  duration: 200
+  duration: 900
   hitFrequency: 2
   players:
   - name: player0
     image: quay.io/bszeti/fuse-player:latest
-    maxhealth: 10
+    maxhealth: 20
     shield: false
     disqualified: false
   - name: player1
     image: quay.io/bszeti/fuse-player:latest
-    maxhealth: 10
+    maxhealth: 20
     shield: false
     disqualified: false
   - name: player2
     image: quay.io/bszeti/fuse-player:latest
-    maxhealth: 10
+    maxhealth: 20
     shield: false
     disqualified: false
   - name: player3
     image: quay.io/bszeti/fuse-player:latest
-    maxhealth: 10
+    maxhealth: 20
     shield: false
     disqualified: false

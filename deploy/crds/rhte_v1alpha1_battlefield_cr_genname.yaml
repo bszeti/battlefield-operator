@@ -1,22 +1,24 @@
 apiVersion: rhte.demojam.battlefield/v1alpha1
 kind: Battlefield
 metadata:
-  generateName: my-
+  generateName: bf-
 spec:
-  duration: 180
+  duration: 300
   hitFrequency: 2
   players:
   - name: player0
     # image: default-route-openshift-image-registry.apps-crc.testing/myproject/fuse-player-app
     image: quay.io/bszeti/fuse-player:latest
-    maxhealth: 1000
+    maxhealth: 20
     shield: false
-    disqualified: true
+    disqualified: false
   - name: player1
     image: quay.io/bszeti/fuse-player:latest
-    maxhealth: 3
-    shield: true
+    maxhealth: 10
+    shield: false
+    disqualified: false
   - name: player2
     image: quay.io/bszeti/fuse-player:latest
-    maxhealth: 3
+    maxhealth: 10
     shield: false
+    disqualified: false
