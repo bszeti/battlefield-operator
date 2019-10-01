@@ -2,12 +2,11 @@ package battlefield
 
 import (
 	"context"
+	"io/ioutil"
+	"net/http"
 	"strconv"
 	"strings"
 	"time"
-	"net/http"
-	"io/ioutil"
-	
 
 	rhtev1alpha1 "github.com/bszeti/battlefield-operator/pkg/apis/rhte/v1alpha1"
 	corev1 "k8s.io/api/core/v1"
@@ -37,10 +36,9 @@ var log = logf.Log.WithName("controller_battlefield")
 * business logic.  Delete these comments after modifying this file.*
  */
 
- var netClient = &http.Client{
+var netClient = &http.Client{
 	Timeout: time.Second * 1,
-  }
-
+}
 
 // Add creates a new Battlefield Controller and adds it to the Manager. The Manager will set fields on the Controller
 // and Start it when the Manager is Started.
@@ -139,9 +137,9 @@ func (r *ReconcileBattlefield) Reconcile(request reconcile.Request) (reconcile.R
 		for _, player := range battlefield.Spec.Players {
 			battlefield.Status.Scores = append(battlefield.Status.Scores,
 				rhtev1alpha1.PlayerStatus{
-					Name:  player.Name,
-					Kill:  0,
-					Death: 0,
+					Name:          player.Name,
+					Kill:          0,
+					Death:         0,
 					CurrentHealth: player.MaxHealth,
 				})
 		}
@@ -157,13 +155,12 @@ func (r *ReconcileBattlefield) Reconcile(request reconcile.Request) (reconcile.R
 		//The update will trigger a new request. To avoid racing conditions, it's better to always return.
 		return reconcile.Result{}, err
 
-		
-	} 
+	}
 	//check if time is expired
 	if battlefield.Status.StartTime != nil {
-		timeExpired = time.Since(battlefield.Status.StartTime.Time) > time.Duration(battlefield.Spec.Duration)*time.Second
+		timeExpired = time.Now().After(battlefield.Status.StopTime.Time)
+		//timeExpired = time.Since(battlefield.Status.StartTime.Time) > time.Duration(battlefield.Spec.Duration)*time.Second
 	}
-	
 
 	//reqLogger.Info("Players", "Num of players", len(battlefield.Spec.Players), "Names", battlefield.Spec.Players )
 
@@ -215,6 +212,7 @@ func (r *ReconcileBattlefield) Reconcile(request reconcile.Request) (reconcile.R
 
 		//Manage Istio VirtualService - for shield and default
 		virtualService := newVirtualServiceForPlayer(battlefield, &player)
+		//reqLogger.Info("Len VirtualService", "VirtualService.Name", virtualService.Name, "len", len(virtualService.Spec.VirtualService.Http))
 
 		foundVirtualService := &istio.VirtualService{}
 		err = r.client.Get(ctx, types.NamespacedName{Name: virtualService.Name, Namespace: virtualService.Namespace}, foundVirtualService)
@@ -239,7 +237,7 @@ func (r *ReconcileBattlefield) Reconcile(request reconcile.Request) (reconcile.R
 				if !timeExpired {
 					//TODO: Compare old and new VirtualService
 					//reqLogger.Info("Updating VirtualService", "VirtualService.Name", virtualService.Name)
-					foundVirtualService.Spec=virtualService.Spec
+					foundVirtualService.Spec = virtualService.Spec
 					err := r.client.Update(ctx, foundVirtualService)
 					if err != nil {
 						reqLogger.Error(err, "Error creating VirtualService", "virtualService", virtualService)
@@ -256,42 +254,8 @@ func (r *ReconcileBattlefield) Reconcile(request reconcile.Request) (reconcile.R
 					}
 				}
 			}
-		}	
-		
-		//VirtualService for disqualified players
-		virtualService = newVirtualServiceForDisqualifiedPlayer(battlefield, &player)
+		}
 
-		foundVirtualService = &istio.VirtualService{}
-		err = r.client.Get(ctx, types.NamespacedName{Name: virtualService.Name, Namespace: virtualService.Namespace}, foundVirtualService)
-		if err != nil {
-			if errors.IsNotFound(err) {
-				if !timeExpired && player.Disqualified{ //Create missing VirtualService if player is diqualified
-					reqLogger.Info("Creating VirtualService for disqualified", "VirtualService.Name", virtualService.Name)
-					err := r.client.Create(ctx, virtualService)
-					if err != nil {
-						reqLogger.Error(err, "Error creating VirtualService for disqualified", "VirtualService.Name", virtualService.Name)
-						return reconcile.Result{}, err
-					}
-				}
-			} else {
-				reqLogger.Error(err, "Error reading VirtualService for disqualified", "VirtualService.Name", virtualService.Name)
-				return reconcile.Result{}, err
-			}
-		} else {
-			//VirtualService is found and not deleted
-			if foundVirtualService.DeletionTimestamp == nil {
-
-				//If time is up or the player is not disqualified, delete foundVirtualService
-				if timeExpired || ! player.Disqualified{
-					reqLogger.Info("Time is up - deleting VirtualService for disqualified", "VirtualService.Name", foundVirtualService.Name)
-					err := r.client.Delete(ctx, foundVirtualService)
-					if err != nil {
-						reqLogger.Error(err, "Error deleting VirtualService for disqualified", "VirtualService.Name", foundVirtualService.Name)
-						return reconcile.Result{}, err
-					}
-				}
-			}
-		}	
 	}
 
 	//***********************
@@ -332,10 +296,10 @@ func (r *ReconcileBattlefield) Reconcile(request reconcile.Request) (reconcile.R
 
 			//check if container "player" is terminated - update scores and delete the pod to stop any sidecars
 			containerStatusPlayer := getContainerStatus(found.Status.ContainerStatuses, "player")
-			if containerStatusPlayer != nil  { //It's expected to have a "player" container...
-				setPlayerReady(battlefield,player.Name,containerStatusPlayer.Ready)
+			if containerStatusPlayer != nil { //It's expected to have a "player" container...
+				setPlayerReady(battlefield, player.Name, containerStatusPlayer.Ready)
 				if containerStatusPlayer.Ready || timeExpired {
-					setKilledBy(battlefield,player.Name,"")
+					setKilledBy(battlefield, player.Name, "")
 				}
 
 				//Only manage pod if it's not marked for deletetion yet
@@ -354,13 +318,13 @@ func (r *ReconcileBattlefield) Reconcile(request reconcile.Request) (reconcile.R
 						killedBy := containerStatusPlayer.State.Terminated.Message
 						reqLogger.Info("Player is killed", "Death", player.Name, "Kill", killedBy)
 						increaseKill(battlefield, killedBy)
-						increaseDeath(battlefield,player.Name)
+						increaseDeath(battlefield, player.Name)
 						setKilledBy(battlefield, player.Name, killedBy)
 						setCurrentHealth(battlefield, player.Name, 0)
-						
+
 					} else {
 
-						if containerStatusPlayer.Ready  {
+						if containerStatusPlayer.Ready {
 							//Get current health from pod
 							url := "http://" + found.Name + "/api/status/currenthealth"
 							response, err := netClient.Get(url)
@@ -374,11 +338,10 @@ func (r *ReconcileBattlefield) Reconcile(request reconcile.Request) (reconcile.R
 								if strerr == nil {
 									//Update current health in status
 									setCurrentHealth(battlefield, player.Name, currentHealth)
-									reqLogger.Info("CurrentHealth","player", player.Name, "CurrentHealth", currentHealth)
+									reqLogger.Info("CurrentHealth", "player", player.Name, "CurrentHealth", currentHealth)
 								}
 							}
 						}
-						
 
 						//If time is up, delete pod
 						if timeExpired {
@@ -400,7 +363,6 @@ func (r *ReconcileBattlefield) Reconcile(request reconcile.Request) (reconcile.R
 					return reconcile.Result{}, err
 				}
 			}
-			
 
 		}
 	}
@@ -413,7 +375,9 @@ func (r *ReconcileBattlefield) Reconcile(request reconcile.Request) (reconcile.R
 
 		battlefield.Status.Phase = "started"
 		t := metav1.Now()
+		tend := metav1.NewTime(t.Add(time.Duration(battlefield.Spec.Duration) * time.Second))
 		battlefield.Status.StartTime = &t
+		battlefield.Status.StopTime = &tend
 
 		err := r.client.Status().Update(ctx, battlefield)
 		if err != nil {
@@ -430,8 +394,8 @@ func (r *ReconcileBattlefield) Reconcile(request reconcile.Request) (reconcile.R
 	if timeExpired && battlefield.Status.Phase != "done" {
 
 		battlefield.Status.Phase = "done"
-		t := metav1.Now()
-		battlefield.Status.StopTime = &t
+		// t := metav1.Now()
+		// battlefield.Status.StopTime = &t
 
 		reqLogger.Info("Game Over", "Duration", battlefield.Spec.Duration, "StartTime", battlefield.Status.StartTime, "StopTime", battlefield.Status.StopTime)
 
@@ -440,7 +404,7 @@ func (r *ReconcileBattlefield) Reconcile(request reconcile.Request) (reconcile.R
 			reqLogger.Error(err, "Error updating Battlefield")
 			return reconcile.Result{}, err
 		}
-		
+
 	}
 
 	reqLogger.Info("Reconciling done")
@@ -473,7 +437,7 @@ func newServiceForPlayer(battlefield *rhtev1alpha1.Battlefield, player *rhtev1al
 				},
 			},
 			Selector: map[string]string{
-				"player": player.Name,
+				"player":      player.Name,
 				"battlefield": battlefield.Name,
 			},
 			Type: corev1.ServiceTypeClusterIP,
@@ -483,43 +447,93 @@ func newServiceForPlayer(battlefield *rhtev1alpha1.Battlefield, player *rhtev1al
 
 //Virtual Service for shield
 func newVirtualServiceForPlayer(battlefield *rhtev1alpha1.Battlefield, player *rhtev1alpha1.Player) *istio.VirtualService {
-	 labels := map[string]string{
-	 	"app":         battlefield.Name,
-	 	"battlefield": battlefield.Name,
-	 	"player":      player.Name,
-	 }
+	labels := map[string]string{
+		"app":         battlefield.Name,
+		"battlefield": battlefield.Name,
+		"player":      player.Name,
+	}
 
 	resourceNameForPlayer := battlefield.Name + "-player-" + player.Name
 
-	vs := istio.VirtualService {
+	vs := istio.VirtualService{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:        resourceNameForPlayer,
-			Namespace:   battlefield.Namespace,
+			Name:      resourceNameForPlayer,
+			Namespace: battlefield.Namespace,
 			Labels:    labels,
 		},
-		Spec: istio.VirtualServiceSpec {
+		Spec: istio.VirtualServiceSpec{
 			VirtualService: istiov1alpha3.VirtualService{
 				Hosts: []string{
 					resourceNameForPlayer,
 				},
 				Http: []*istiov1alpha3.HTTPRoute{
-					&istiov1alpha3.HTTPRoute{
-						Route: []*istiov1alpha3.HTTPRouteDestination{
-							&istiov1alpha3.HTTPRouteDestination{
-								Destination: &istiov1alpha3.Destination{
-									Host: resourceNameForPlayer,
-								},
-							},
-						},
-					},
+					// &istiov1alpha3.HTTPRoute{
+					// 	Route: []*istiov1alpha3.HTTPRouteDestination{
+					// 		&istiov1alpha3.HTTPRouteDestination{
+					// 			Destination: &istiov1alpha3.Destination{
+					// 				Host: resourceNameForPlayer,
+					// 			},
+					// 		},
+					// 	},
+					// },
 				},
 			},
 		},
 	}
 
+	//Create rules for disqualified players
+	matchList := []*istiov1alpha3.HTTPMatchRequest{}
+	for _, player := range battlefield.Spec.Players {
+		if player.Disqualified {
+			matchPlayer := istiov1alpha3.HTTPMatchRequest{
+				SourceLabels: map[string]string{
+					"player": player.Name,
+				},
+			}
+			matchList = append(matchList, &matchPlayer)
+		}
+	}
+	if len(matchList) != 0 {
+		disqualifiedRule := &istiov1alpha3.HTTPRoute{
+
+			Route: []*istiov1alpha3.HTTPRouteDestination{
+				&istiov1alpha3.HTTPRouteDestination{
+					Destination: &istiov1alpha3.Destination{
+						Host: "ignored", //Required
+					},
+				},
+			},
+
+			Fault: &istiov1alpha3.HTTPFaultInjection{
+				Abort: &istiov1alpha3.HTTPFaultInjection_Abort{
+					Percentage: &istiov1alpha3.Percent{
+						Value: 100.0,
+					},
+					ErrorType: &istiov1alpha3.HTTPFaultInjection_Abort_HttpStatus{
+						HttpStatus: 505,
+					},
+				},
+			},
+
+			Match: matchList,
+		}
+		vs.Spec.VirtualService.Http = append(vs.Spec.VirtualService.Http, disqualifiedRule)
+	}
+
+	//Player has shield
 	if player.Shield {
-		vs.Spec.VirtualService.Http[0].Fault = 
-			&istiov1alpha3.HTTPFaultInjection{
+
+		shieldRule := &istiov1alpha3.HTTPRoute{
+
+			Route: []*istiov1alpha3.HTTPRouteDestination{
+				&istiov1alpha3.HTTPRouteDestination{
+					Destination: &istiov1alpha3.Destination{
+						Host: "ignored", //Required
+					},
+				},
+			},
+
+			Fault: &istiov1alpha3.HTTPFaultInjection{
 				Abort: &istiov1alpha3.HTTPFaultInjection_Abort{
 					Percentage: &istiov1alpha3.Percent{
 						Value: 100.0,
@@ -528,9 +542,9 @@ func newVirtualServiceForPlayer(battlefield *rhtev1alpha1.Battlefield, player *r
 						HttpStatus: 504,
 					},
 				},
-			}
-		vs.Spec.VirtualService.Http[0].Match = 
-			[]*istiov1alpha3.HTTPMatchRequest{
+			},
+
+			Match: []*istiov1alpha3.HTTPMatchRequest{
 				&istiov1alpha3.HTTPMatchRequest{
 					Uri: &istiov1alpha3.StringMatch{
 						MatchType: &istiov1alpha3.StringMatch_Prefix{
@@ -538,79 +552,31 @@ func newVirtualServiceForPlayer(battlefield *rhtev1alpha1.Battlefield, player *r
 						},
 					},
 				},
-		   }
+			},
+		}
+
+		vs.Spec.VirtualService.Http = append(vs.Spec.VirtualService.Http, shieldRule)
 	}
 
-	// TODO: Force HTPP 200 if player is not ready. 
+	//TODO: Add rule for not ready player to return 200
+
+	//Default rule to hit the actual service
+	defaultRule := &istiov1alpha3.HTTPRoute{
+		Route: []*istiov1alpha3.HTTPRouteDestination{
+			&istiov1alpha3.HTTPRouteDestination{
+				Destination: &istiov1alpha3.Destination{
+					Host: resourceNameForPlayer,
+				},
+			},
+		},
+	}
+
+	vs.Spec.VirtualService.Http = append(vs.Spec.VirtualService.Http, defaultRule)
 
 	return &vs
 
 }
 
-//Virtual Service for shield
-func newVirtualServiceForDisqualifiedPlayer(battlefield *rhtev1alpha1.Battlefield, player *rhtev1alpha1.Player) *istio.VirtualService {
-	labels := map[string]string{
-		"app":         battlefield.Name,
-		"battlefield": battlefield.Name,
-		"player":      player.Name,
-	}
-
-   resourceNameForPlayer := battlefield.Name + "-disqualified-" + player.Name
-
-   //List of targets for this player - practically other's services
-	var targets []string
-	for _, target := range battlefield.Spec.Players {
-		if player.Name != target.Name {
-			targets = append(targets, battlefield.Name+"-player-"+target.Name)
-		}
-	}
-
-   vs := istio.VirtualService {
-	   ObjectMeta: metav1.ObjectMeta{
-		   Name:        resourceNameForPlayer,
-		   Namespace:   battlefield.Namespace,
-		   Labels:    labels,
-	   },
-	   Spec: istio.VirtualServiceSpec {
-		   VirtualService: istiov1alpha3.VirtualService{
-			   Hosts: targets,
-			   Http: []*istiov1alpha3.HTTPRoute{
-				   &istiov1alpha3.HTTPRoute{
-					   Match: []*istiov1alpha3.HTTPMatchRequest{
-							&istiov1alpha3.HTTPMatchRequest{
-								SourceLabels: map[string]string{
-									"app":         battlefield.Name,
-									"battlefield": battlefield.Name,
-									"player":      player.Name,
-								},
-							},
-					   },
-					   Route: []*istiov1alpha3.HTTPRouteDestination{
-						   &istiov1alpha3.HTTPRouteDestination{
-							   Destination: &istiov1alpha3.Destination{
-								   Host: "ignored",
-							   },
-						   },
-					   	},
-					   	Fault: &istiov1alpha3.HTTPFaultInjection{
-							Abort: &istiov1alpha3.HTTPFaultInjection_Abort{
-								Percentage: &istiov1alpha3.Percent{
-									Value: 100.0,
-								},
-								ErrorType: &istiov1alpha3.HTTPFaultInjection_Abort_HttpStatus{
-									HttpStatus: 505,
-								},
-							},
-		   				},
-				   },
-			   },
-		   },
-	   },
-   }
-
-   return &vs
-
-}
 
 // Pod definition for a player
 func newPodForPlayer(battlefield *rhtev1alpha1.Battlefield, player *rhtev1alpha1.Player) *corev1.Pod {
@@ -714,11 +680,10 @@ func setPlayerReady(battlefield *rhtev1alpha1.Battlefield, playerName string, re
 // 	return false;
 // }
 
-
 func setKilledBy(battlefield *rhtev1alpha1.Battlefield, playerName string, killedBy string) {
 	for index, playerStatus := range battlefield.Status.Scores {
 		if playerName == playerStatus.Name {
-			battlefield.Status.Scores[index].KilledBy=killedBy
+			battlefield.Status.Scores[index].KilledBy = killedBy
 			return
 		}
 	}
@@ -727,7 +692,7 @@ func setKilledBy(battlefield *rhtev1alpha1.Battlefield, playerName string, kille
 func setCurrentHealth(battlefield *rhtev1alpha1.Battlefield, playerName string, currentHealth int) {
 	for index, playerStatus := range battlefield.Status.Scores {
 		if playerName == playerStatus.Name {
-			battlefield.Status.Scores[index].CurrentHealth=currentHealth
+			battlefield.Status.Scores[index].CurrentHealth = currentHealth
 			return
 		}
 	}
