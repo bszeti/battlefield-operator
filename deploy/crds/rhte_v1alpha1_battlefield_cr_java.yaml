@@ -12,18 +12,22 @@ spec:
     maxhealth: 10
     shield: false
     disqualified: false
+    type: java
   - name: quarkus-jvm
     image: quay.io/bszeti/battlefield-player-fuse:latest
     maxhealth: 10
     shield: false
     disqualified: false
+    type: java
   - name: quarkus-native
     image: quay.io/bszeti/battlefield-player-fuse:latest
     maxhealth: 10
     shield: false
     disqualified: false
+    type: java
   - name: java
     image: quay.io/bszeti/battlefield-player-fuse:latest
     maxhealth: 10
     shield: false
     disqualified: false
+    type: cheater

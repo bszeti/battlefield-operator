@@ -49,11 +49,14 @@ spec:
                     type: string
                   shield:
                     type: boolean
+                  type:
+                    type: string
                 required:
                 - name
                 - maxhealth
                 - shield
                 - disqualified
+                - type
                 type: object
               type: array
           required:
