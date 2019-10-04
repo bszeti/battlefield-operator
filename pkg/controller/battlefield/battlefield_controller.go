@@ -717,6 +717,13 @@ func newPodForPlayer(battlefield *rhtev1alpha1.Battlefield, player *rhtev1alpha1
 		}
 	}
 
+	hitPeriodMs := strconv.Itoa(battlefield.Spec.HitFrequency * 1000)
+	hitPeriodDuration:= strconv.Itoa(battlefield.Spec.HitFrequency)+".0s"
+	if (player.Type == "cheater") {
+		hitPeriodMs = strconv.Itoa(battlefield.Spec.HitFrequency * 250)
+		hitPeriodDuration = strconv.FormatFloat(float64(battlefield.Spec.HitFrequency)/4.0,'f',2,64)+"s"
+	}
+
 	return &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:        battlefield.Name + "-player-" + player.Name,
@@ -745,11 +752,11 @@ func newPodForPlayer(battlefield *rhtev1alpha1.Battlefield, player *rhtev1alpha1
 						},
 						{
 							Name:  "BATTLEFIELD_HIT_PERIOD_MS",
-							Value: strconv.Itoa(battlefield.Spec.HitFrequency * 1000),
+							Value: hitPeriodMs,
 						},
 						{
 							Name:  "BATTLEFIELD_HIT_PERIOD_DURATION",
-							Value: strconv.Itoa(battlefield.Spec.HitFrequency)+".0s",
+							Value: hitPeriodDuration,
 						},
 					},
 					ReadinessProbe: &corev1.Probe{
