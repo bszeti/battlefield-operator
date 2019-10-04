@@ -14,16 +14,16 @@ spec:
     type: java
   - name: player1
     image: quay.io/bszeti/battlefield-player-fuse:latest
-    maxhealth: 50
-    shield: true
-    disqualified: false
-    type: quarkus
-  - name: player2
-    image: quay.io/bszeti/battlefield-player-fuse:latest
-    maxhealth: 10
+    maxhealth: 5
     shield: false
     disqualified: false
     type: cheater
+  - name: player2
+    image: quay.io/bszeti/battlefield-player-fuse:latest
+    maxhealth: 5
+    shield: false
+    disqualified: false
+    type: quarkus
   - name: player3
     image: quay.io/bszeti/battlefield-player-fuse:latest
     maxhealth: 5
