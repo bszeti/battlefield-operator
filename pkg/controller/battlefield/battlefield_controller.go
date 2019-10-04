@@ -265,7 +265,47 @@ func (r *ReconcileBattlefield) Reconcile(request reconcile.Request) (reconcile.R
 
 				//Only manage pod if it's not marked for deletetion yet
 				if found.DeletionTimestamp == nil {
-					if containerStatusPlayer.State.Terminated != nil {
+
+					deletePod := false;
+					killedBy := "" //For players who can't terminate (aka Quarkus)
+					if containerStatusPlayer.Ready {
+						//Get current health from pod
+						url := "http://" + found.Name + "/api/status/currenthealth"
+						response, err := netClient.Get(url)
+						if err != nil {
+							//reqLogger.Error(err, "Error getting health for player", "url", url)
+						} else {
+
+							defer response.Body.Close()
+							data, _ := ioutil.ReadAll(response.Body)
+							currentHealth, strerr := strconv.Atoi(string(data))
+							if strerr == nil {
+								//Update current health in status
+								setCurrentHealth(battlefield, player.Name, currentHealth)
+								reqLogger.Info("CurrentHealth", "player", player.Name, "CurrentHealth", currentHealth)
+								//Quarkus can't terminate, we have to do it from here. 
+								if currentHealth==0 {
+									deletePod=true
+									
+									url := "http://" + found.Name + "/api/status/killedby"
+									response, err := netClient.Get(url)
+									if err != nil {
+										//reqLogger.Error(err, "Error getting killedBy for player", "url", url)
+									} else {
+										defer response.Body.Close()
+										data, err := ioutil.ReadAll(response.Body)
+										if err==nil{
+											killedBy = string(data)
+										}
+									}
+									
+								}
+							}
+						}
+					}
+
+					
+					if deletePod || containerStatusPlayer.State.Terminated != nil {
 						//TODO: Sometimes points are counted multiple times because of racing conditions. client.Delete doesn't return if Pod was deleted before.
 
 						reqLogger.Info("Killed - deleting Pod", "Pod.Name", found.Name)
@@ -276,7 +316,9 @@ func (r *ReconcileBattlefield) Reconcile(request reconcile.Request) (reconcile.R
 						}
 
 						//Increase score counters
-						killedBy := containerStatusPlayer.State.Terminated.Message
+						if containerStatusPlayer.State.Terminated != nil && len(containerStatusPlayer.State.Terminated.Message)!=0 {
+							killedBy = containerStatusPlayer.State.Terminated.Message
+						}
 						reqLogger.Info("Player is killed", "Death", player.Name, "Kill", killedBy)
 						increaseKill(battlefield, killedBy)
 						increaseDeath(battlefield, player.Name)
@@ -284,25 +326,6 @@ func (r *ReconcileBattlefield) Reconcile(request reconcile.Request) (reconcile.R
 						setCurrentHealth(battlefield, player.Name, 0)
 
 					} else {
-
-						if containerStatusPlayer.Ready {
-							//Get current health from pod
-							url := "http://" + found.Name + "/api/status/currenthealth"
-							response, err := netClient.Get(url)
-							if err != nil {
-								//reqLogger.Error(err, "Error getting health for player", "url", url)
-							} else {
-
-								defer response.Body.Close()
-								data, _ := ioutil.ReadAll(response.Body)
-								currentHealth, strerr := strconv.Atoi(string(data))
-								if strerr == nil {
-									//Update current health in status
-									setCurrentHealth(battlefield, player.Name, currentHealth)
-									reqLogger.Info("CurrentHealth", "player", player.Name, "CurrentHealth", currentHealth)
-								}
-							}
-						}
 
 						//If time is up, delete pod
 						if timeExpired {
@@ -330,6 +353,9 @@ func (r *ReconcileBattlefield) Reconcile(request reconcile.Request) (reconcile.R
 
 		//Take care of VirtualService for the player
 		virtualService := newVirtualServiceForPlayer(battlefield, &player)
+		if err := controllerutil.SetControllerReference(battlefield, virtualService, r.scheme); err != nil {
+			return reconcile.Result{}, err
+		}
 
 		foundVirtualService := &istio.VirtualService{}
 		err = r.client.Get(ctx, types.NamespacedName{Name: virtualService.Name, Namespace: virtualService.Namespace}, foundVirtualService)
@@ -718,8 +744,12 @@ func newPodForPlayer(battlefield *rhtev1alpha1.Battlefield, player *rhtev1alpha1
 							Value: strconv.Itoa(player.MaxHealth),
 						},
 						{
-							Name:  "BATTLEFIELD_HIT_PERIOD",
+							Name:  "BATTLEFIELD_HIT_PERIOD_MS",
 							Value: strconv.Itoa(battlefield.Spec.HitFrequency * 1000),
+						},
+						{
+							Name:  "BATTLEFIELD_HIT_PERIOD_DURATION",
+							Value: strconv.Itoa(battlefield.Spec.HitFrequency)+".0s",
 						},
 					},
 					ReadinessProbe: &corev1.Probe{

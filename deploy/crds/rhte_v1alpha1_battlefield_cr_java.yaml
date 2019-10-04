@@ -1,0 +1,28 @@
+apiVersion: rhte.demojam.battlefield/v1alpha1
+kind: Battlefield
+metadata:
+  generateName: bf-
+spec:
+  duration: 900
+  hitFrequency: 2
+  players:
+  - name: fuse
+    image: quay.io/bszeti/battlefield-player-fuse:latest
+    maxhealth: 10
+    shield: false
+    disqualified: false
+  - name: quarkus-jvm
+    image: quay.io/bszeti/battlefield-player-fuse:latest
+    maxhealth: 10
+    shield: false
+    disqualified: false
+  - name: quarkus-native
+    image: quay.io/bszeti/battlefield-player-fuse:latest
+    maxhealth: 10
+    shield: false
+    disqualified: false
+  - name: java
+    image: quay.io/bszeti/battlefield-player-fuse:latest
+    maxhealth: 10
+    shield: false
+    disqualified: false
