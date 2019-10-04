@@ -6,23 +6,24 @@ spec:
   duration: 900
   hitFrequency: 2
   players:
-  - name: player0
-    image: quay.io/bszeti/fuse-player:latest
-    maxhealth: 20
+  - name: fuse
+    image: quay.io/bszeti/battlefield-player-fuse:latest
+    maxhealth: 10
     shield: false
     disqualified: false
-  - name: player1
-    image: quay.io/bszeti/fuse-player:latest
-    maxhealth: 20
+  - name: quarkus-jvm
+    image: quay.io/picochange/battlefield-player-quarkus-jvm:latest
+    maxhealth: 10
     shield: false
     disqualified: false
-  - name: player2
-    image: quay.io/bszeti/fuse-player:latest
-    maxhealth: 20
+  - name: quarkus-native
+    image: quay.io/picochange/battlefield-player-quarkus-jvm:latest
+    #image: quay.io/picochange/battlefield-player-quarkus-native:latest
+    maxhealth: 10
     shield: false
     disqualified: false
-  - name: player3
-    image: quay.io/bszeti/fuse-player:latest
-    maxhealth: 20
+  - name: java
+    image: quay.io/bszeti/battlefield-player-fuse:latest
+    maxhealth: 10
     shield: false
     disqualified: false

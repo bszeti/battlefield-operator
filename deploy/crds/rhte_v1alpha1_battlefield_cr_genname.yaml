@@ -8,17 +8,17 @@ spec:
   players:
   - name: player0
     # image: default-route-openshift-image-registry.apps-crc.testing/myproject/fuse-player-app
-    image: quay.io/bszeti/fuse-player:latest
+    image: quay.io/bszeti/battlefield-player-fuse:latest
     maxhealth: 20
     shield: false
     disqualified: false
   - name: player1
-    image: quay.io/bszeti/fuse-player:latest
+    image: quay.io/bszeti/battlefield-player-fuse:latest
     maxhealth: 10
     shield: false
     disqualified: false
   - name: player2
-    image: quay.io/bszeti/fuse-player:latest
+    image: quay.io/bszeti/battlefield-player-fuse:latest
     maxhealth: 10
     shield: false
     disqualified: false

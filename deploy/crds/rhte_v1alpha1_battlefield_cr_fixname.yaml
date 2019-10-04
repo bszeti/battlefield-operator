@@ -3,26 +3,26 @@ kind: Battlefield
 metadata:
   name: demofield
 spec:
-  duration: 600
+  duration: 300
   hitFrequency: 2
   players:
   - name: player0
-    image: quay.io/bszeti/fuse-player:latest
-    maxhealth: 5
+    image: quay.io/bszeti/battlefield-player-fuse:latest
+    maxhealth: 100
     shield: true
     disqualified: true
   - name: player1
-    image: quay.io/bszeti/fuse-player:latest
-    maxhealth: 5
+    image: quay.io/bszeti/battlefield-player-fuse:latest
+    maxhealth: 50
     shield: true
     disqualified: false
   - name: player2
-    image: quay.io/bszeti/fuse-player:latest
-    maxhealth: 5
+    image: quay.io/bszeti/battlefield-player-fuse:latest
+    maxhealth: 10
     shield: false
     disqualified: false
   - name: player3
-    image: quay.io/bszeti/fuse-player:latest
+    image: quay.io/bszeti/battlefield-player-fuse:latest
     maxhealth: 5
     shield: false
     disqualified: true

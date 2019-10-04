@@ -1,7 +1,8 @@
 apiVersion: rhte.demojam.battlefield/v1alpha1
 kind: Battlefield
 metadata:
-  generateName: bf-
+   name: demofield
+#  generateName: bf-
 spec:
   duration: 900
   hitFrequency: 2
