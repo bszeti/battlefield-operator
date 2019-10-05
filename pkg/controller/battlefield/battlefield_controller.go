@@ -284,22 +284,23 @@ func (r *ReconcileBattlefield) Reconcile(request reconcile.Request) (reconcile.R
 								setCurrentHealth(battlefield, player.Name, currentHealth)
 								reqLogger.Info("CurrentHealth", "player", player.Name, "CurrentHealth", currentHealth)
 								//Quarkus can't terminate, we have to do it from here. 
-								if currentHealth==0 {
-									deletePod=true
+								// if currentHealth==0 {
+								// 	deletePod=true
 									
-									url := "http://" + found.Name + "/api/status/killedby"
-									response, err := netClient.Get(url)
-									if err != nil {
-										//reqLogger.Error(err, "Error getting killedBy for player", "url", url)
-									} else {
-										defer response.Body.Close()
-										data, err := ioutil.ReadAll(response.Body)
-										if err==nil{
-											killedBy = string(data)
-										}
-									}
+								// 	url := "http://" + found.Name + "/api/status/killedby"
+								// 	response, err := netClient.Get(url)
+								// 	if err != nil {
+								// 		//reqLogger.Error(err, "Error getting killedBy for player", "url", url)
+								// 	} else {
+								// 		defer response.Body.Close()
+								// 		data, err := ioutil.ReadAll(response.Body)
+								// 		if err==nil{
+								// 			killedBy = string(data)
+								// 			log.Info("Api killedBy:"+killedBy)
+								// 		}
+								// 	}
 									
-								}
+								// }
 							}
 						}
 					}
@@ -318,6 +319,7 @@ func (r *ReconcileBattlefield) Reconcile(request reconcile.Request) (reconcile.R
 						//Increase score counters
 						if containerStatusPlayer.State.Terminated != nil && len(containerStatusPlayer.State.Terminated.Message)!=0 {
 							killedBy = containerStatusPlayer.State.Terminated.Message
+							log.Info("Termination log:"+killedBy)
 						}
 						reqLogger.Info("Player is killed", "Death", player.Name, "Kill", killedBy)
 						increaseKill(battlefield, killedBy)
@@ -655,42 +657,6 @@ func newVirtualServiceForPlayer(battlefield *rhtev1alpha1.Battlefield, player *r
 	}
 
 	vs.Spec.VirtualService.Http = append(vs.Spec.VirtualService.Http, defaultRule)
-
-
-	// dummyRule:= &istiov1alpha3.HTTPRoute{
-
-	// 	Route: []*istiov1alpha3.HTTPRouteDestination{
-	// 		&istiov1alpha3.HTTPRouteDestination{
-	// 			Destination: &istiov1alpha3.Destination{
-	// 				Host: "ignored", //Required
-	// 			},
-	// 		},
-	// 	},
-
-	// 	Fault: &istiov1alpha3.HTTPFaultInjection{
-	// 		Abort: &istiov1alpha3.HTTPFaultInjection_Abort{
-	// 			Percentage: &istiov1alpha3.Percent{
-	// 				Value: 100.0,
-	// 			},
-	// 			ErrorType: &istiov1alpha3.HTTPFaultInjection_Abort_HttpStatus{
-	// 				HttpStatus: 200,
-	// 			},
-	// 		},
-	// 	},
-
-	// 	Match: []*istiov1alpha3.HTTPMatchRequest{
-	// 		&istiov1alpha3.HTTPMatchRequest{
-	// 			Uri: &istiov1alpha3.StringMatch{
-	// 				MatchType: &istiov1alpha3.StringMatch_Prefix{
-	// 					Prefix: "/nonexisting",
-	// 				},
-	// 			},
-	// 		},
-	// 	},
-	// }
-
-	// vs.Spec.VirtualService.Http = append(vs.Spec.VirtualService.Http, dummyRule)
-
 
 	return &vs
 
