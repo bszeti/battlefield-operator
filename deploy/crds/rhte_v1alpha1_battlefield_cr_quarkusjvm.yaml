@@ -1,0 +1,32 @@
+apiVersion: rhte.demojam.battlefield/v1alpha1
+kind: Battlefield
+metadata:
+   name: demofield
+spec:
+  duration: 900
+  hitFrequency: 2
+  players:
+  - name: q0
+    image: quay.io/picochange/battlefield-player-quarkus-jvm:latest
+    maxhealth: 10
+    shield: false
+    disqualified: false
+    type: java
+  - name: q1
+    image: quay.io/picochange/battlefield-player-quarkus-jvm:latest
+    maxhealth: 10
+    shield: false
+    disqualified: false
+    type: java
+  - name: q2
+    image: quay.io/picochange/battlefield-player-quarkus-jvm:latest
+    maxhealth: 10
+    shield: false
+    disqualified: false
+    type: java
+  - name: q3
+    image: quay.io/picochange/battlefield-player-quarkus-jvm:latest
+    maxhealth: 10
+    shield: false
+    disqualified: false
+    type: quarkus
