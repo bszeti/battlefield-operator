@@ -15,6 +15,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/intstr"
+	"k8s.io/apimachinery/pkg/api/resource"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
@@ -702,7 +703,8 @@ func newPodForPlayer(battlefield *rhtev1alpha1.Battlefield, player *rhtev1alpha1
 				{
 					Name:            "player",
 					Image:           player.Image,
-					ImagePullPolicy: corev1.PullAlways,
+					// ImagePullPolicy: corev1.PullAlways,
+					ImagePullPolicy: corev1.PullIfNotPresent,
 					Env: []corev1.EnvVar{
 						{
 							Name:  "BATTLEFIELD_PLAYER_NAME",
@@ -725,6 +727,15 @@ func newPodForPlayer(battlefield *rhtev1alpha1.Battlefield, player *rhtev1alpha1
 							Value: hitPeriodDuration,
 						},
 					},
+					Resources: corev1.ResourceRequirements{
+						Requests: corev1.ResourceList{
+							"memory": resource.MustParse("256Mi"),
+						},
+						Limits: corev1.ResourceList{
+							"memory": resource.MustParse("512Mi"),
+						},
+
+					},
 					ReadinessProbe: &corev1.Probe{
 						Handler: corev1.Handler{
 							HTTPGet: &corev1.HTTPGetAction{
@@ -734,6 +745,9 @@ func newPodForPlayer(battlefield *rhtev1alpha1.Battlefield, player *rhtev1alpha1
 						},
 						SuccessThreshold: 1,
 						FailureThreshold: 1,
+						PeriodSeconds: 1,
+						InitialDelaySeconds: 1,
+						TimeoutSeconds: 1,
 					},
 				},
 			},
