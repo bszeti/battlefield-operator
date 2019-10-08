@@ -115,8 +115,6 @@ func (r *ReconcileBattlefield) Reconcile(request reconcile.Request) (reconcile.R
 	if err != nil {
 		if errors.IsNotFound(err) {
 			// Request object not found, could have been deleted after reconcile request.
-			// Owned objects are automatically garbage collected. For additional cleanup logic use finalizers.
-			// Return and don't requeue
 			return reconcile.Result{}, nil
 		}
 		// Error reading the object - requeue the request.
@@ -153,7 +151,7 @@ func (r *ReconcileBattlefield) Reconcile(request reconcile.Request) (reconcile.R
 		if err != nil {
 			reqLogger.Error(err, "Error updating Battlefield")
 		}
-		//The update will trigger a new request. To avoid racing conditions, it's better to always return.
+		//The update will trigger a new request. It's better to return.
 		return reconcile.Result{}, err
 
 	}
@@ -271,7 +269,7 @@ func (r *ReconcileBattlefield) Reconcile(request reconcile.Request) (reconcile.R
 					killedBy := "" //For players who can't terminate (aka Quarkus)
 					if containerStatusPlayer.Ready {
 						//Get current health from pod
-						url := "http://" + found.Name + "/api/status/currenthealth"
+						url := "http://" + strings.ToLower(found.Name) + "/api/status/currenthealth"
 						response, err := netClient.Get(url)
 						if err != nil {
 							//reqLogger.Error(err, "Error getting health for player", "url", url)
@@ -453,14 +451,14 @@ func (r *ReconcileBattlefield) Reconcile(request reconcile.Request) (reconcile.R
 //Service definition for a player
 func newServiceForPlayer(battlefield *rhtev1alpha1.Battlefield, player *rhtev1alpha1.Player) *corev1.Service {
 	labels := map[string]string{
-		"app":         battlefield.Name + "-" + player.Name,
+		"app":         strings.ToLower(battlefield.Name + "-" + player.Name),
 		"battlefield": battlefield.Name,
 		"player":      player.Name,
 	}
 
 	return &corev1.Service{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      battlefield.Name + "-player-" + player.Name,
+			Name:      strings.ToLower(battlefield.Name + "-player-" + player.Name),
 			Namespace: battlefield.Namespace,
 			Labels:    labels,
 		},
@@ -473,8 +471,8 @@ func newServiceForPlayer(battlefield *rhtev1alpha1.Battlefield, player *rhtev1al
 				},
 			},
 			Selector: map[string]string{
-				"player":      player.Name,
-				"battlefield": battlefield.Name,
+				"player":      strings.ToLower(player.Name),
+				"battlefield": strings.ToLower(battlefield.Name),
 			},
 			Type: corev1.ServiceTypeClusterIP,
 		},
@@ -484,14 +482,14 @@ func newServiceForPlayer(battlefield *rhtev1alpha1.Battlefield, player *rhtev1al
 //Service "shield" and "disqualified"
 func newFakeServiceForPlayer(battlefield *rhtev1alpha1.Battlefield, player *rhtev1alpha1.Player, serviceType string) *corev1.Service {
 	labels := map[string]string{
-		"app":         battlefield.Name + "-" + player.Name + "-" + serviceType,
+		"app":         strings.ToLower(battlefield.Name + "-" + player.Name + "-" + serviceType),
 		"battlefield": battlefield.Name,
-		"player":      player.Name,
+		"player":      strings.ToLower(player.Name),
 	}
 
 	return &corev1.Service{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      battlefield.Name + "-player-" + player.Name + "-" + serviceType,
+			Name:      strings.ToLower(battlefield.Name + "-player-" + player.Name + "-" + serviceType),
 			Namespace: battlefield.Namespace,
 			Labels:    labels,
 		},
@@ -515,12 +513,12 @@ func newFakeServiceForPlayer(battlefield *rhtev1alpha1.Battlefield, player *rhte
 //Virtual Service for shield
 func newVirtualServiceForPlayer(battlefield *rhtev1alpha1.Battlefield, player *rhtev1alpha1.Player) *istio.VirtualService {
 	labels := map[string]string{
-		"app":         battlefield.Name + "-" + player.Name,
+		"app":         strings.ToLower(battlefield.Name + "-" + player.Name),
 		"battlefield": battlefield.Name,
-		"player":      player.Name,
+		"player":      strings.ToLower(player.Name),
 	}
 
-	resourceNameForPlayer := battlefield.Name + "-player-" + player.Name
+	resourceNameForPlayer := strings.ToLower(battlefield.Name + "-player-" + player.Name)
 
 	vs := istio.VirtualService{
 		ObjectMeta: metav1.ObjectMeta{
@@ -547,7 +545,7 @@ func newVirtualServiceForPlayer(battlefield *rhtev1alpha1.Battlefield, player *r
 					&istiov1alpha3.HTTPRouteDestination{
 						Destination: &istiov1alpha3.Destination{
 							
-							Host: battlefield.Name + "-player-" + disqualifiedPlayer.Name+"-disqualified",
+							Host: strings.ToLower(battlefield.Name + "-player-" + disqualifiedPlayer.Name+"-disqualified"),
 						},
 					},
 				},
@@ -566,7 +564,7 @@ func newVirtualServiceForPlayer(battlefield *rhtev1alpha1.Battlefield, player *r
 				Match:  []*istiov1alpha3.HTTPMatchRequest{
 					&istiov1alpha3.HTTPMatchRequest{
 						SourceLabels: map[string]string{
-							"player": disqualifiedPlayer.Name,
+							"player": strings.ToLower(disqualifiedPlayer.Name),
 						},
 					},
 				},
@@ -667,20 +665,20 @@ func newVirtualServiceForPlayer(battlefield *rhtev1alpha1.Battlefield, player *r
 // Pod definition for a player
 func newPodForPlayer(battlefield *rhtev1alpha1.Battlefield, player *rhtev1alpha1.Player) *corev1.Pod {
 	labels := map[string]string{
-		"app":         battlefield.Name + "-" + player.Name,
+		"app":         strings.ToLower(battlefield.Name + "-" + player.Name),
 		"battlefield": battlefield.Name,
-		"player":      player.Name,
+		"player":      strings.ToLower(player.Name),
 	}
 
 	annotations := map[string]string{
 		"sidecar.istio.io/inject": "true",
 	}
 
-	//List of targets for this pod - practically hservice names
+	//List of targets for this pod - practically service names
 	var targets []string
 	for _, target := range battlefield.Spec.Players {
 		if player.Name != target.Name {
-			targets = append(targets, battlefield.Name+"-player-"+target.Name)
+			targets = append(targets, strings.ToLower(battlefield.Name+"-player-"+target.Name))
 		}
 	}
 
@@ -693,7 +691,7 @@ func newPodForPlayer(battlefield *rhtev1alpha1.Battlefield, player *rhtev1alpha1
 
 	return &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:        battlefield.Name + "-player-" + player.Name,
+			Name:        strings.ToLower(battlefield.Name + "-player-" + player.Name),
 			Namespace:   battlefield.Namespace,
 			Labels:      labels,
 			Annotations: annotations,
@@ -703,8 +701,8 @@ func newPodForPlayer(battlefield *rhtev1alpha1.Battlefield, player *rhtev1alpha1
 				{
 					Name:            "player",
 					Image:           player.Image,
-					// ImagePullPolicy: corev1.PullAlways,
-					ImagePullPolicy: corev1.PullIfNotPresent,
+					ImagePullPolicy: corev1.PullAlways,
+					//ImagePullPolicy: corev1.PullIfNotPresent,
 					Env: []corev1.EnvVar{
 						{
 							Name:  "BATTLEFIELD_PLAYER_NAME",
