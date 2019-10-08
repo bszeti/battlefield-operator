@@ -451,7 +451,7 @@ func (r *ReconcileBattlefield) Reconcile(request reconcile.Request) (reconcile.R
 //Service definition for a player
 func newServiceForPlayer(battlefield *rhtev1alpha1.Battlefield, player *rhtev1alpha1.Player) *corev1.Service {
 	labels := map[string]string{
-		"app":         strings.ToLower(battlefield.Name + "-" + player.Name),
+		"app":         strings.ToLower(battlefield.Name + "-" + player.Name)	,
 		"battlefield": battlefield.Name,
 		"player":      player.Name,
 	}
