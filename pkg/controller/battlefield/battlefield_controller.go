@@ -458,7 +458,7 @@ func newServiceForPlayer(battlefield *rhtev1alpha1.Battlefield, player *rhtev1al
 
 	return &corev1.Service{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      strings.ToLower(battlefield.Name + "-player-" + player.Name),
+			Name:      strings.ToLower(battlefield.Name + "-" + player.Name),
 			Namespace: battlefield.Namespace,
 			Labels:    labels,
 		},
@@ -489,7 +489,7 @@ func newFakeServiceForPlayer(battlefield *rhtev1alpha1.Battlefield, player *rhte
 
 	return &corev1.Service{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      strings.ToLower(battlefield.Name + "-player-" + player.Name + "-" + serviceType),
+			Name:      strings.ToLower(battlefield.Name + "-" + player.Name + "-" + serviceType),
 			Namespace: battlefield.Namespace,
 			Labels:    labels,
 		},
@@ -518,7 +518,7 @@ func newVirtualServiceForPlayer(battlefield *rhtev1alpha1.Battlefield, player *r
 		"player":      strings.ToLower(player.Name),
 	}
 
-	resourceNameForPlayer := strings.ToLower(battlefield.Name + "-player-" + player.Name)
+	resourceNameForPlayer := strings.ToLower(battlefield.Name + "-" + player.Name)
 
 	vs := istio.VirtualService{
 		ObjectMeta: metav1.ObjectMeta{
@@ -545,7 +545,7 @@ func newVirtualServiceForPlayer(battlefield *rhtev1alpha1.Battlefield, player *r
 					&istiov1alpha3.HTTPRouteDestination{
 						Destination: &istiov1alpha3.Destination{
 							
-							Host: strings.ToLower(battlefield.Name + "-player-" + disqualifiedPlayer.Name+"-disqualified"),
+							Host: strings.ToLower(battlefield.Name + "-" + disqualifiedPlayer.Name+"-disqualified"),
 						},
 					},
 				},
@@ -678,7 +678,7 @@ func newPodForPlayer(battlefield *rhtev1alpha1.Battlefield, player *rhtev1alpha1
 	var targets []string
 	for _, target := range battlefield.Spec.Players {
 		if player.Name != target.Name {
-			targets = append(targets, strings.ToLower(battlefield.Name+"-player-"+target.Name))
+			targets = append(targets, strings.ToLower(battlefield.Name+"-"+target.Name))
 		}
 	}
 
@@ -691,7 +691,7 @@ func newPodForPlayer(battlefield *rhtev1alpha1.Battlefield, player *rhtev1alpha1
 
 	return &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:        strings.ToLower(battlefield.Name + "-player-" + player.Name),
+			Name:        strings.ToLower(battlefield.Name + "-" + player.Name),
 			Namespace:   battlefield.Namespace,
 			Labels:      labels,
 			Annotations: annotations,
